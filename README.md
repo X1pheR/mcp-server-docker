@@ -123,10 +123,12 @@ responsible for many containers.
 
 ## 📔 Resources
 
-The server implements a couple resources for every container:
+The server exposes resource templates rather than enumerating currently-running containers:
 
-- Stats: CPU, memory, etc. for a container
-- Logs: tail some logs from a container
+- `docker://containers/{container_id}/logs` (`text/plain`)
+- `docker://containers/{container_id}/stats` (`application/json`)
+
+Read either URI with a Docker container ID or name.
 
 ## 🔨 Tools
 
@@ -212,7 +214,22 @@ Simply set a `ssh://` host URL in the MCP server definition:
 
 ## 💻 Development
 
-Prefer using Devbox to configure your development environment.
+Prefer using Devbox to configure your development environment. The server uses
+MCP Python SDK v2's high-level `MCPServer` API and can be inspected directly:
+
+```bash
+uv sync --all-groups
+uv run mcp dev src/mcp_server_docker/server.py:app
+# or: npx @modelcontextprotocol/inspector uv run mcp-server-docker
+```
+
+Run the hermetic test and lint suite without a Docker daemon:
+
+```bash
+uv run pytest
+uv run ruff format --check src tests
+uv run ruff check src tests
+```
 
 See the `devbox.json` for helpful development commands.
 
