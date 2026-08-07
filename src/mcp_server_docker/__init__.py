@@ -1,16 +1,9 @@
-import asyncio
-
-import docker
-
-from .server import run_stdio
-from .settings import ServerSettings
+from .server import app
 
 
-def main():
-    """Run the server sourcing configuration from environment variables."""
-    asyncio.run(run_stdio(ServerSettings(), docker.from_env()))
+def main() -> None:
+    """Run the server over stdio; the Docker client is opened during lifespan."""
+    app.run()
 
 
-# Optionally expose other important items at package level
-__all__ = ["main", "run_stdio", "ServerSettings"]
-
+__all__ = ["app", "main"]

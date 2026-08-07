@@ -1,81 +1,100 @@
+"""MCPServer v2 implementation for Docker."""
+
 import json
-from collections.abc import Sequence
-from typing import Any
-import traceback
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from typing import Annotated, Any, Literal
 
 import docker
-import mcp.types as types
-from docker.models.containers import Container
-from mcp.server import Server
-from pydantic import AnyUrl, ValidationError
+from mcp.server import MCPServer
+from mcp.server.mcpserver import Context
+from mcp.types import ToolAnnotations
+from pydantic import BaseModel, Field
 
-from .input_schemas import (
-    BuildImageInput,
-    ContainerActionInput,
-    CreateContainerInput,
-    CreateNetworkInput,
-    CreateVolumeInput,
-    DockerComposePromptInput,
-    FetchContainerLogsInput,
-    ListContainersInput,
-    ListImagesInput,
-    ListNetworksInput,
-    ListVolumesInput,
-    PullPushImageInput,
-    RecreateContainerInput,
-    RemoveContainerInput,
-    RemoveImageInput,
-    RemoveNetworkInput,
-    RemoveVolumeInput,
+from mcp_server_docker._version import __version__
+from mcp_server_docker.output_schemas import docker_to_dict
+
+
+@dataclass
+class AppContext:
+    """State made available to handlers for one running server."""
+
+    docker: docker.DockerClient
+
+
+class ListContainersFilters(BaseModel):
+    label: list[str] | None = Field(
+        None, description="Filter by label, either `key` or `key=value` format"
+    )
+
+
+class ListImagesFilters(BaseModel):
+    dangling: bool | None = Field(None, description="Show dangling images")
+    label: list[str] | None = Field(
+        None, description="Filter by label, either `key` or `key=value` format"
+    )
+
+
+class ListNetworksFilter(BaseModel):
+    label: list[str] | None = Field(
+        None, description="Filter by label, either `key` or `key=value` format"
+    )
+
+
+ContainerID = Annotated[str, Field(description="Container ID or name")]
+ImageName = Annotated[str, Field(description="Docker image name")]
+Detach = Annotated[bool, Field(description="Run container in the background")]
+Entrypoint = Annotated[str | None, Field(description="Entrypoint to run in container")]
+ContainerCommand = Annotated[
+    str | None, Field(description="Command to run in container")
+]
+NetworkName = Annotated[
+    str | None, Field(description="Network to attach the container to")
+]
+Environment = Annotated[
+    dict[str, str] | None, Field(description="Environment variables dictionary")
+]
+PortBindings = Annotated[
+    dict[str, int | list[int] | tuple[str, int] | None] | None,
+    Field(description="Container-to-host port bindings"),
+]
+VolumeMappings = Annotated[
+    dict[str, dict[str, str]] | list[str] | None, Field(description="Volume mappings")
+]
+ContainerLabels = Annotated[
+    dict[str, str] | list[str] | None, Field(description="Container labels")
+]
+AutoRemove = Annotated[bool, Field(description="Automatically remove the container")]
+
+
+def _client(ctx: Context[AppContext]) -> docker.DockerClient:
+    return ctx.request_context.lifespan_context.docker
+
+
+@asynccontextmanager
+async def lifespan(_: MCPServer[AppContext]) -> AsyncIterator[AppContext]:
+    """Create and close the Docker client for one server lifetime."""
+    client = docker.from_env()
+    try:
+        yield AppContext(docker=client)
+    finally:
+        client.close()
+
+
+app = MCPServer("docker-server", version=__version__, lifespan=lifespan)
+
+
+@app.prompt(
+    name="docker_compose", description="Treat the LLM like a Docker Compose manager"
 )
-from .output_schemas import docker_to_dict
-from .settings import ServerSettings
-
-app = Server("docker-server")
-_docker: docker.DockerClient
-_server_settings: ServerSettings
-
-
-@app.list_prompts()
-async def list_prompts() -> list[types.Prompt]:
-    return [
-        types.Prompt(
-            name="docker_compose",
-            description="Treat the LLM like a Docker Compose manager",
-            arguments=[
-                types.PromptArgument(
-                    name="name", description="Unique name of the project", required=True
-                ),
-                types.PromptArgument(
-                    name="containers",
-                    description="Describe containers you want",
-                    required=True,
-                ),
-            ],
-        )
-    ]
-
-
-@app.get_prompt()
-async def get_prompt(
-    name: str, arguments: dict[str, str] | None
-) -> types.GetPromptResult:
-    if name == "docker_compose":
-        input = DockerComposePromptInput.model_validate(arguments)
-        project_label = f"mcp-server-docker.project={input.name}"
-        containers: list[Container] = _docker.containers.list(
-            filters={"label": project_label}
-        )
-        volumes = _docker.volumes.list(filters={"label": project_label})
-        networks = _docker.networks.list(filters={"label": project_label})
-
-        return types.GetPromptResult(
-            messages=[
-                types.PromptMessage(
-                    role="user",
-                    content=types.TextContent(
-                        type="text",
-                        text=f"""
+def docker_compose(ctx: Context, name: str, containers: str) -> str:
+    client = ctx.request_context.lifespan_context.docker
+    project_label = f"mcp-server-docker.project={name}"
+    existing_containers = client.containers.list(filters={"label": project_label})
+    volumes = client.volumes.list(filters={"label": project_label})
+    networks = client.networks.list(filters={"label": project_label})
+    return f"""
 You are going to act as a Docker Compose manager, using the Docker Tools
 available to you. Instead of being provided a `docker-compose.yml` file,
 you will be given instructions in plain language, and interact with the
@@ -83,18 +102,18 @@ user through a plan+apply loop, akin to how Terraform operates.
 
 Every Docker resource you create must be assigned the following label:
 
-    {project_label}
+{project_label}
 
 You should use this label to filter resources when possible.
 
 Every Docker resource you create must also be prefixed with the project name, followed by a dash (`-`):
 
-    {input.name}-{{ResourceName}}
+{name}-{{ResourceName}}
 
 Here are the resources currently present in the project, based on the presence of the above label:
 
 <BEGIN CONTAINERS>
-{json.dumps([docker_to_dict(c) for c in containers], indent=2)}
+{json.dumps([docker_to_dict(c) for c in existing_containers], indent=2)}
 <END CONTAINERS>
 <BEGIN VOLUMES>
 {json.dumps([docker_to_dict(v) for v in volumes], indent=2)}
@@ -113,7 +132,7 @@ So if a user asks to deploy Nginx, you should pull `nginx:latest`.
 Below is a description of the state of the Docker resources which the user would like you to manage:
 
 <BEGIN DOCKER-RESOURCES>
-{input.containers}
+{containers}
 <END DOCKER-RESOURCES>
 
 Respond to this message with a plan of what you will do, in the EXACT format below:
@@ -121,7 +140,7 @@ Respond to this message with a plan of what you will do, in the EXACT format bel
 <BEGIN FORMAT>
 ## Introduction
 
-I will be assisting with deploying Docker containers for project: `{input.name}`.
+I will be assisting with deploying Docker containers for project: `{name}`.
 
 ### Plan+Apply Loop
 
@@ -181,321 +200,461 @@ The following are guidelines for you to follow when interacting with Docker Tool
 
 - Always prefer `run_container` for starting a container, instead of `create_container`+`start_container`.
 - Always prefer `recreate_container` for updating a container, instead of `stop_container`+`remove_container`+`run_container`.
-""",
-                    ),
-                )
-            ]
-        )
-
-    raise ValueError(f"Unknown prompt name: {name}")
+"""
 
 
-@app.list_resources()
-async def list_resources() -> list[types.Resource]:
-    resources = []
-    for container in _docker.containers.list():
-        resources.extend(
-            [
-                types.Resource(
-                    uri=AnyUrl(f"docker://containers/{container.id}/logs"),
-                    name=f"Logs for {container.name}",
-                    description=f"Live logs for container {container.name}",
-                    mimeType="text/plain",
-                ),
-                types.Resource(
-                    uri=AnyUrl(f"docker://containers/{container.id}/stats"),
-                    name=f"Stats for {container.name}",
-                    description=f"Live resource usage stats for container {container.name}",
-                    mimeType="application/json",
-                ),
-            ]
-        )
-    return resources
+@app.resource(
+    "docker://containers/{container_id}/logs",
+    name="Container logs",
+    description="Live logs for a container",
+    mime_type="text/plain",
+)
+def container_logs(container_id: str, ctx: Context) -> str:
+    container = ctx.request_context.lifespan_context.docker.containers.get(container_id)
+    return container.logs(tail=100).decode("utf-8")
 
 
-@app.read_resource()
-async def read_resource(uri: AnyUrl) -> str:
-    if not str(uri).startswith("docker://containers/"):
-        raise ValueError(f"Unknown resource URI: {uri}")
-
-    parts = str(uri).split("/")
-    if len(parts) != 5:  # docker://containers/{id}/{logs|stats}
-        raise ValueError(f"Invalid container resource URI: {uri}")
-
-    container_id = parts[3]
-    resource_type = parts[4]
-    container = _docker.containers.get(container_id)
-
-    if resource_type == "logs":
-        logs = container.logs(tail=100).decode("utf-8")
-        return json.dumps(logs.split("\n"))
-
-    elif resource_type == "stats":
-        stats = container.stats(stream=False)
-        return json.dumps(stats, indent=2)
-
-    else:
-        raise ValueError(f"Unknown container resource type: {resource_type}")
+@app.resource(
+    "docker://containers/{container_id}/stats",
+    name="Container stats",
+    description="Live resource usage stats for a container",
+    mime_type="application/json",
+)
+def container_stats(container_id: str, ctx: Context) -> dict[str, Any]:
+    container = ctx.request_context.lifespan_context.docker.containers.get(container_id)
+    return container.stats(stream=False)
 
 
-@app.list_tools()
-async def list_tools() -> list[types.Tool]:
+@app.tool(
+    description="List all Docker containers",
+    annotations=ToolAnnotations(
+        read_only_hint=True, idempotent_hint=True, open_world_hint=False
+    ),
+)
+def list_containers(
+    ctx: Context[AppContext],
+    all: Annotated[
+        bool, Field(description="Show all containers (default shows just running)")
+    ] = False,
+    filters: Annotated[
+        ListContainersFilters | None, Field(description="Filter containers")
+    ] = None,
+) -> list[dict[str, Any]]:
     return [
-        types.Tool(
-            name="list_containers",
-            description="List all Docker containers",
-            inputSchema=ListContainersInput.model_json_schema(),
-        ),
-        types.Tool(
-            name="create_container",
-            description="Create a new Docker container",
-            inputSchema=CreateContainerInput.model_json_schema(),
-        ),
-        types.Tool(
-            name="run_container",
-            description="Run an image in a new Docker container (preferred over `create_container` + `start_container`)",
-            inputSchema=CreateContainerInput.model_json_schema(),
-        ),
-        types.Tool(
-            name="recreate_container",
-            description="Stop and remove a container, then run a new container. Fails if the container does not exist.",
-            inputSchema=RecreateContainerInput.model_json_schema(),
-        ),
-        types.Tool(
-            name="start_container",
-            description="Start a Docker container",
-            inputSchema=ContainerActionInput.model_json_schema(),
-        ),
-        types.Tool(
-            name="fetch_container_logs",
-            description="Fetch logs for a Docker container",
-            inputSchema=FetchContainerLogsInput.model_json_schema(),
-        ),
-        types.Tool(
-            name="stop_container",
-            description="Stop a Docker container",
-            inputSchema=ContainerActionInput.model_json_schema(),
-        ),
-        types.Tool(
-            name="remove_container",
-            description="Remove a Docker container",
-            inputSchema=RemoveContainerInput.model_json_schema(),
-        ),
-        types.Tool(
-            name="list_images",
-            description="List Docker images",
-            inputSchema=ListImagesInput.model_json_schema(),
-        ),
-        types.Tool(
-            name="pull_image",
-            description="Pull a Docker image",
-            inputSchema=PullPushImageInput.model_json_schema(),
-        ),
-        types.Tool(
-            name="push_image",
-            description="Push a Docker image",
-            inputSchema=PullPushImageInput.model_json_schema(),
-        ),
-        types.Tool(
-            name="build_image",
-            description="Build a Docker image from a Dockerfile",
-            inputSchema=BuildImageInput.model_json_schema(),
-        ),
-        types.Tool(
-            name="remove_image",
-            description="Remove a Docker image",
-            inputSchema=RemoveImageInput.model_json_schema(),
-        ),
-        types.Tool(
-            name="list_networks",
-            description="List Docker networks",
-            inputSchema=ListNetworksInput.model_json_schema(),
-        ),
-        types.Tool(
-            name="create_network",
-            description="Create a Docker network",
-            inputSchema=CreateNetworkInput.model_json_schema(),
-        ),
-        types.Tool(
-            name="remove_network",
-            description="Remove a Docker network",
-            inputSchema=RemoveNetworkInput.model_json_schema(),
-        ),
-        types.Tool(
-            name="list_volumes",
-            description="List Docker volumes",
-            inputSchema=ListVolumesInput.model_json_schema(),
-        ),
-        types.Tool(
-            name="create_volume",
-            description="Create a Docker volume",
-            inputSchema=CreateVolumeInput.model_json_schema(),
-        ),
-        types.Tool(
-            name="remove_volume",
-            description="Remove a Docker volume",
-            inputSchema=RemoveVolumeInput.model_json_schema(),
-        ),
+        docker_to_dict(container)
+        for container in _client(ctx).containers.list(
+            all=all, filters=filters.model_dump() if filters else None
+        )
     ]
 
 
-@app.call_tool()
-async def call_tool(
-    name: str, arguments: Any
-) -> Sequence[types.TextContent | types.ImageContent | types.EmbeddedResource]:
-    if arguments is None:
-        arguments = {}
-
-    result = None
-
-    try:
-        if name == "list_containers":
-            args = ListContainersInput(**arguments)
-            containers = _docker.containers.list(**args.model_dump())
-            result = [docker_to_dict(c) for c in containers]
-
-        elif name == "create_container":
-            args = CreateContainerInput(**arguments)
-            container = _docker.containers.create(**args.model_dump())
-            result = docker_to_dict(container)
-
-        elif name == "run_container":
-            args = CreateContainerInput(**arguments)
-            container = _docker.containers.run(**args.model_dump())
-            result = docker_to_dict(container)
-
-        elif name == "recreate_container":
-            args = RecreateContainerInput(**arguments)
-
-            container = _docker.containers.get(args.resolved_container_id)
-            container.stop()
-            container.remove()
-
-            run_args = CreateContainerInput(**arguments)
-            container = _docker.containers.run(**run_args.model_dump())
-            result = docker_to_dict(container)
-
-        elif name == "start_container":
-            args = ContainerActionInput(**arguments)
-            container = _docker.containers.get(args.container_id)
-            container.start()
-            result = docker_to_dict(container)
-
-        elif name == "stop_container":
-            args = ContainerActionInput(**arguments)
-            container = _docker.containers.get(args.container_id)
-            container.stop()
-            result = docker_to_dict(container)
-
-        elif name == "remove_container":
-            args = RemoveContainerInput(**arguments)
-            container = _docker.containers.get(args.container_id)
-            container.remove(force=args.force)
-            result = docker_to_dict(container, {"status": "removed"})
-
-        elif name == "fetch_container_logs":
-            args = FetchContainerLogsInput(**arguments)
-            container = _docker.containers.get(args.container_id)
-            logs = container.logs(tail=args.tail).decode("utf-8")
-            result = {"logs": logs.split("\n")}
-
-        elif name == "list_images":
-            args = ListImagesInput(**arguments)
-
-            images = _docker.images.list(**args.model_dump())
-            result = [docker_to_dict(img) for img in images]
-
-        elif name == "pull_image":
-            args = PullPushImageInput(**arguments)
-            model_dump = args.model_dump()
-            repository = model_dump.pop("repository")
-            image = _docker.images.pull(repository, **model_dump)
-            result = docker_to_dict(image)
-
-        elif name == "push_image":
-            args = PullPushImageInput(**arguments)
-            model_dump = args.model_dump()
-            repository = model_dump.pop("repository")
-            _docker.images.push(repository, **model_dump)
-            result = {
-                "status": "pushed",
-                "repository": args.repository,
-                "tag": args.tag,
-            }
-
-        elif name == "build_image":
-            args = BuildImageInput(**arguments)
-            image, logs = _docker.images.build(**args.model_dump())
-            result = {"image": docker_to_dict(image), "logs": list(logs)}
-
-        elif name == "remove_image":
-            args = RemoveImageInput(**arguments)
-            _docker.images.remove(**args.model_dump())
-            result = {"status": "removed", "image": args.image}
-
-        elif name == "list_networks":
-            args = ListNetworksInput(**arguments)
-            networks = _docker.networks.list(**args.model_dump())
-            result = [docker_to_dict(net) for net in networks]
-
-        elif name == "create_network":
-            args = CreateNetworkInput(**arguments)
-            network = _docker.networks.create(**args.model_dump())
-            result = docker_to_dict(network)
-
-        elif name == "remove_network":
-            args = RemoveNetworkInput(**arguments)
-            network = _docker.networks.get(args.network_id)
-            network.remove()
-            result = docker_to_dict(network)
-
-        elif name == "list_volumes":
-            ListVolumesInput(**arguments)  # Validate empty input
-            volumes = _docker.volumes.list()
-            result = [docker_to_dict(v) for v in volumes]
-
-        elif name == "create_volume":
-            args = CreateVolumeInput(**arguments)
-            volume = _docker.volumes.create(**args.model_dump())
-            result = docker_to_dict(volume)
-
-        elif name == "remove_volume":
-            args = RemoveVolumeInput(**arguments)
-            volume = _docker.volumes.get(args.volume_name)
-            volume.remove(force=args.force)
-            result = docker_to_dict(volume)
-
-        else:
-            return [types.TextContent(type="text", text=f"Unknown tool: {name}")]
-
-    except ValidationError as e:
-        await app.request_context.session.send_log_message(
-            "error", "Failed to validate input provided by LLM: " + str(e)
+@app.tool(
+    description="Create a new Docker container",
+    annotations=ToolAnnotations(
+        destructive_hint=False, idempotent_hint=False, open_world_hint=False
+    ),
+)
+def create_container(
+    ctx: Context[AppContext],
+    image: ImageName,
+    detach: Annotated[
+        bool, Field(description="Run container in the background")
+    ] = True,
+    name: Annotated[str | None, Field(description="Container name")] = None,
+    entrypoint: Annotated[
+        str | None, Field(description="Entrypoint to run in container")
+    ] = None,
+    command: Annotated[
+        str | None, Field(description="Command to run in container")
+    ] = None,
+    network: Annotated[
+        str | None, Field(description="Network to attach the container to")
+    ] = None,
+    environment: Annotated[
+        dict[str, str] | None, Field(description="Environment variables dictionary")
+    ] = None,
+    ports: Annotated[
+        dict[str, int | list[int] | tuple[str, int] | None] | None,
+        Field(description="Container-to-host port bindings"),
+    ] = None,
+    volumes: Annotated[
+        dict[str, dict[str, str]] | list[str] | None,
+        Field(description="Volume mappings"),
+    ] = None,
+    labels: Annotated[
+        dict[str, str] | list[str] | None, Field(description="Container labels")
+    ] = None,
+    auto_remove: Annotated[
+        bool, Field(description="Automatically remove the container")
+    ] = False,
+) -> dict[str, Any]:
+    return docker_to_dict(
+        _client(ctx).containers.create(
+            image=image,
+            detach=detach,
+            name=name,
+            entrypoint=entrypoint,
+            command=command,
+            network=network,
+            environment=environment,
+            ports=ports,
+            volumes=volumes,
+            labels=labels,
+            auto_remove=auto_remove,
         )
-        return [
-            types.TextContent(
-                type="text", text=f"ERROR: You provided invalid Tool inputs: {e}"
-            )
-        ]
+    )
 
-    except Exception as e:
-        await app.request_context.session.send_log_message(
-            "error", traceback.format_exc()
+
+@app.tool(
+    description="Run an image in a new Docker container (preferred over `create_container` + `start_container`)",
+    annotations=ToolAnnotations(
+        destructive_hint=False, idempotent_hint=False, open_world_hint=False
+    ),
+)
+def run_container(
+    ctx: Context[AppContext],
+    image: ImageName,
+    detach: Annotated[
+        bool, Field(description="Run container in the background")
+    ] = True,
+    name: Annotated[str | None, Field(description="Container name")] = None,
+    entrypoint: Annotated[
+        str | None, Field(description="Entrypoint to run in container")
+    ] = None,
+    command: Annotated[
+        str | None, Field(description="Command to run in container")
+    ] = None,
+    network: Annotated[
+        str | None, Field(description="Network to attach the container to")
+    ] = None,
+    environment: Annotated[
+        dict[str, str] | None, Field(description="Environment variables dictionary")
+    ] = None,
+    ports: Annotated[
+        dict[str, int | list[int] | tuple[str, int] | None] | None,
+        Field(description="Container-to-host port bindings"),
+    ] = None,
+    volumes: Annotated[
+        dict[str, dict[str, str]] | list[str] | None,
+        Field(description="Volume mappings"),
+    ] = None,
+    labels: Annotated[
+        dict[str, str] | list[str] | None, Field(description="Container labels")
+    ] = None,
+    auto_remove: Annotated[
+        bool, Field(description="Automatically remove the container")
+    ] = False,
+) -> dict[str, Any]:
+    return docker_to_dict(
+        _client(ctx).containers.run(
+            image=image,
+            detach=detach,
+            name=name,
+            entrypoint=entrypoint,
+            command=command,
+            network=network,
+            environment=environment,
+            ports=ports,
+            volumes=volumes,
+            labels=labels,
+            auto_remove=auto_remove,
         )
-        raise e
-
-    return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
+    )
 
 
-async def run_stdio(settings: ServerSettings, docker_client: docker.DockerClient):
-    """Run the server on Standard I/O with the given settings and Docker client."""
-    from mcp.server.stdio import stdio_server
+@app.tool(
+    description="Stop and remove a container, then run a new container. Fails if the container does not exist.",
+    annotations=ToolAnnotations(
+        destructive_hint=True, idempotent_hint=False, open_world_hint=False
+    ),
+)
+def recreate_container(
+    ctx: Context[AppContext],
+    image: ImageName,
+    container_id: ContainerID | None = None,
+    name: Annotated[str | None, Field(description="Container name")] = None,
+    detach: Detach = True,
+    entrypoint: Entrypoint = None,
+    command: ContainerCommand = None,
+    network: NetworkName = None,
+    environment: Environment = None,
+    ports: PortBindings = None,
+    volumes: VolumeMappings = None,
+    labels: ContainerLabels = None,
+    auto_remove: AutoRemove = False,
+) -> dict[str, Any]:
+    if container_id is None and name is None:
+        raise ValueError(
+            "container_id or name is required for identifying the container to stop+remove"
+        )
+    old = _client(ctx).containers.get(container_id or name)
+    old.stop()
+    old.remove()
+    return docker_to_dict(
+        _client(ctx).containers.run(
+            image=image,
+            detach=detach,
+            name=name,
+            entrypoint=entrypoint,
+            command=command,
+            network=network,
+            environment=environment,
+            ports=ports,
+            volumes=volumes,
+            labels=labels,
+            auto_remove=auto_remove,
+        )
+    )
 
-    global _docker
-    _docker = docker_client
 
-    global _server_settings
-    _server_settings = settings
+@app.tool(
+    description="Start a Docker container",
+    annotations=ToolAnnotations(
+        destructive_hint=False, idempotent_hint=False, open_world_hint=False
+    ),
+)
+def start_container(
+    ctx: Context[AppContext], container_id: ContainerID
+) -> dict[str, Any]:
+    container = _client(ctx).containers.get(container_id)
+    container.start()
+    return docker_to_dict(container)
 
-    async with stdio_server() as (read_stream, write_stream):
-        await app.run(read_stream, write_stream, app.create_initialization_options())
+
+@app.tool(
+    description="Fetch logs for a Docker container",
+    annotations=ToolAnnotations(
+        read_only_hint=True, idempotent_hint=True, open_world_hint=False
+    ),
+)
+def fetch_container_logs(
+    ctx: Context[AppContext],
+    container_id: ContainerID,
+    tail: Annotated[
+        int | Literal["all"],
+        Field(description="Number of lines to show from the end"),
+    ] = 100,
+) -> dict[str, list[str]]:
+    return {
+        "logs": _client(ctx)
+        .containers.get(container_id)
+        .logs(tail=tail)
+        .decode("utf-8")
+        .split("\n")
+    }
+
+
+@app.tool(
+    description="Stop a Docker container",
+    annotations=ToolAnnotations(
+        destructive_hint=False, idempotent_hint=False, open_world_hint=False
+    ),
+)
+def stop_container(
+    ctx: Context[AppContext], container_id: ContainerID
+) -> dict[str, Any]:
+    container = _client(ctx).containers.get(container_id)
+    container.stop()
+    return docker_to_dict(container)
+
+
+@app.tool(
+    description="Remove a Docker container",
+    annotations=ToolAnnotations(
+        destructive_hint=True, idempotent_hint=False, open_world_hint=False
+    ),
+)
+def remove_container(
+    ctx: Context[AppContext],
+    container_id: ContainerID,
+    force: Annotated[bool, Field(description="Force remove the container")] = False,
+) -> dict[str, Any]:
+    container = _client(ctx).containers.get(container_id)
+    container.remove(force=force)
+    return docker_to_dict(container, {"status": "removed"})
+
+
+@app.tool(
+    description="List Docker images",
+    annotations=ToolAnnotations(
+        read_only_hint=True, idempotent_hint=True, open_world_hint=False
+    ),
+)
+def list_images(
+    ctx: Context[AppContext],
+    name: Annotated[
+        str | None, Field(description="Filter images by repository name")
+    ] = None,
+    all: Annotated[
+        bool, Field(description="Show all images (default hides intermediate)")
+    ] = False,
+    filters: Annotated[
+        ListImagesFilters | None, Field(description="Filter images")
+    ] = None,
+) -> list[dict[str, Any]]:
+    return [
+        docker_to_dict(image)
+        for image in _client(ctx).images.list(
+            name=name, all=all, filters=filters.model_dump() if filters else None
+        )
+    ]
+
+
+@app.tool(
+    description="Pull a Docker image",
+    annotations=ToolAnnotations(
+        destructive_hint=False, idempotent_hint=False, open_world_hint=True
+    ),
+)
+def pull_image(
+    ctx: Context[AppContext],
+    repository: Annotated[str, Field(description="Image repository")],
+    tag: Annotated[str | None, Field(description="Image tag")] = "latest",
+) -> dict[str, Any]:
+    return docker_to_dict(_client(ctx).images.pull(repository, tag=tag))
+
+
+@app.tool(
+    description="Push a Docker image",
+    annotations=ToolAnnotations(
+        destructive_hint=False, idempotent_hint=False, open_world_hint=True
+    ),
+)
+def push_image(
+    ctx: Context[AppContext],
+    repository: Annotated[str, Field(description="Image repository")],
+    tag: Annotated[str | None, Field(description="Image tag")] = "latest",
+) -> dict[str, str | None]:
+    _client(ctx).images.push(repository, tag=tag)
+    return {"status": "pushed", "repository": repository, "tag": tag}
+
+
+@app.tool(
+    description="Build a Docker image from a Dockerfile",
+    annotations=ToolAnnotations(
+        destructive_hint=False, idempotent_hint=False, open_world_hint=False
+    ),
+)
+def build_image(
+    ctx: Context[AppContext],
+    path: Annotated[str, Field(description="Path to build context")],
+    tag: Annotated[str, Field(description="Image tag")],
+    dockerfile: Annotated[str | None, Field(description="Path to Dockerfile")] = None,
+) -> dict[str, Any]:
+    image, logs = _client(ctx).images.build(path=path, tag=tag, dockerfile=dockerfile)
+    return {"image": docker_to_dict(image), "logs": list(logs)}
+
+
+@app.tool(
+    description="Remove a Docker image",
+    annotations=ToolAnnotations(
+        destructive_hint=True, idempotent_hint=False, open_world_hint=False
+    ),
+)
+def remove_image(
+    ctx: Context[AppContext],
+    image: Annotated[str, Field(description="Image ID or name")],
+    force: Annotated[bool, Field(description="Force remove the image")] = False,
+) -> dict[str, str]:
+    _client(ctx).images.remove(image=image, force=force)
+    return {"status": "removed", "image": image}
+
+
+@app.tool(
+    description="List Docker networks",
+    annotations=ToolAnnotations(
+        read_only_hint=True, idempotent_hint=True, open_world_hint=False
+    ),
+)
+def list_networks(
+    ctx: Context[AppContext],
+    filters: Annotated[
+        ListNetworksFilter | None, Field(description="Filter networks")
+    ] = None,
+) -> list[dict[str, Any]]:
+    return [
+        docker_to_dict(network)
+        for network in _client(ctx).networks.list(
+            filters=filters.model_dump() if filters else None
+        )
+    ]
+
+
+@app.tool(
+    description="Create a Docker network",
+    annotations=ToolAnnotations(
+        destructive_hint=False, idempotent_hint=False, open_world_hint=False
+    ),
+)
+def create_network(
+    ctx: Context[AppContext],
+    name: Annotated[str, Field(description="Network name")],
+    driver: Annotated[str | None, Field(description="Network driver")] = "bridge",
+    internal: Annotated[bool, Field(description="Create an internal network")] = False,
+    labels: Annotated[
+        dict[str, str] | None, Field(description="Network labels")
+    ] = None,
+) -> dict[str, Any]:
+    return docker_to_dict(
+        _client(ctx).networks.create(
+            name=name, driver=driver, internal=internal, labels=labels
+        )
+    )
+
+
+@app.tool(
+    description="Remove a Docker network",
+    annotations=ToolAnnotations(
+        destructive_hint=True, idempotent_hint=False, open_world_hint=False
+    ),
+)
+def remove_network(
+    ctx: Context[AppContext],
+    network_id: Annotated[str, Field(description="Network ID or name")],
+) -> dict[str, Any]:
+    network = _client(ctx).networks.get(network_id)
+    network.remove()
+    return docker_to_dict(network)
+
+
+@app.tool(
+    description="List Docker volumes",
+    annotations=ToolAnnotations(
+        read_only_hint=True, idempotent_hint=True, open_world_hint=False
+    ),
+)
+def list_volumes(ctx: Context[AppContext]) -> list[dict[str, Any]]:
+    return [docker_to_dict(volume) for volume in _client(ctx).volumes.list()]
+
+
+@app.tool(
+    description="Create a Docker volume",
+    annotations=ToolAnnotations(
+        destructive_hint=False, idempotent_hint=False, open_world_hint=False
+    ),
+)
+def create_volume(
+    ctx: Context[AppContext],
+    name: Annotated[str, Field(description="Volume name")],
+    driver: Annotated[str | None, Field(description="Volume driver")] = "local",
+    labels: Annotated[dict[str, str] | None, Field(description="Volume labels")] = None,
+) -> dict[str, Any]:
+    return docker_to_dict(
+        _client(ctx).volumes.create(name=name, driver=driver, labels=labels)
+    )
+
+
+@app.tool(
+    description="Remove a Docker volume",
+    annotations=ToolAnnotations(
+        destructive_hint=True, idempotent_hint=False, open_world_hint=False
+    ),
+)
+def remove_volume(
+    ctx: Context[AppContext],
+    volume_name: Annotated[str, Field(description="Volume name")],
+    force: Annotated[bool, Field(description="Force remove the volume")] = False,
+) -> dict[str, Any]:
+    volume = _client(ctx).volumes.get(volume_name)
+    volume.remove(force=force)
+    return docker_to_dict(volume)
