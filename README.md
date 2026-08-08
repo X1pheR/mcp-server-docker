@@ -1,3 +1,10 @@
+> [!NOTE]
+> The `hypershell` branch is Ronald de Wit's upstream-tracked deployment branch.
+> It is based on upstream `v0.3.0` and keeps only validated local deltas: bounded
+> attached/log output, configuration-preserving container recreation with rollback,
+> deterministic build-intermediate cleanup, and omission of unset nested image filters.
+> Generic fixes are submitted upstream separately; `main` remains an exact upstream baseline.
+
 # 🐋 Docker MCP server
 
 An MCP server for managing Docker with natural language!
