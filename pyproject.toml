@@ -1,6 +1,6 @@
 [project]
 name = "mcp-server-docker"
-version = "0.3.0+hypershell.1"
+version = "0.3.0"
 description = "A Docker MCP Server"
 readme = "README.md"
 dependencies = [
@@ -40,4 +40,3 @@ build-backend = "hatchling.build"
 
 [project.scripts]
 mcp-server-docker = "mcp_server_docker:main"
-mcp-server-docker-hypershell = "mcp_server_docker:main"
