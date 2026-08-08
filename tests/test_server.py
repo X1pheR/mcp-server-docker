@@ -58,6 +58,8 @@ class Collection:
 
     def run(self, **kwargs):
         self.calls.append((f"{self.name}.run", kwargs))
+        if kwargs.get("detach") is False:
+            return b"attached\xff\n"
         return Object(self.calls)
 
 
@@ -156,8 +158,12 @@ async def test_tools_have_flat_schemas_and_container_call_semantics(
         )
         assert docker_client.call("containers.create")["image"] == "alpine"
         assert docker_client.call("containers.create")["environment"] == {"X": "1"}
-        await client.call_tool("run_container", {"image": "alpine", "detach": False})
+        attached = await client.call_tool("run_container", {"image": "alpine", "detach": False})
         assert docker_client.call("containers.run")["detach"] is False
+        assert attached.structured_content == {
+            "mode": "attached",
+            "output": "attached\ufffd\n",
+        }
         await client.call_tool("recreate_container", {"image": "alpine", "name": "old"})
         assert docker_client.call("containers.get") == "old"
         assert [name for name, _ in docker_client.calls[-4:]] == [
