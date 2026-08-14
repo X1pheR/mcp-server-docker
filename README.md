@@ -20,6 +20,7 @@ The generic filter, build-cleanup and attached-run fixes have also been submitte
 - Python 3.12 or newer.
 - A Docker Engine reachable through the Python Docker SDK `from_env()` configuration.
 - Docker SDK `7.1.0` or newer within the dependency contract in `pyproject.toml` and the reviewed lockfile.
+- A non-SSH Docker endpoint. This downstream release deliberately does not package Paramiko, so `ssh://` Docker endpoints are not supported.
 
 Docker Engine `29.6.2` is the current live deployment target for this release line. CI is daemon-free; final release acceptance requires controlled live validation against that engine. Broader Docker Engine compatibility is not claimed.
 
@@ -80,31 +81,11 @@ A Docker socket mount grants the server control over the Docker daemon. Treat th
 
 ## Configuration
 
-The server uses `docker.from_env()`. Standard Docker SDK environment variables therefore define the daemon connection, including `DOCKER_HOST` and the Docker TLS variables where applicable.
+The server uses `docker.from_env()`. Standard Docker SDK environment variables therefore define the daemon connection for supported non-SSH transports, including `DOCKER_HOST` and the Docker TLS variables where applicable. With a normal local Docker installation, no additional environment configuration is required.
 
-Example for a remote Docker daemon over SSH:
+`ssh://` Docker endpoints are deliberately outside the supported `0.3.0+x1pher.1` dependency set. Upstream packages Paramiko for Docker-over-SSH, but GitHub advisory `GHSA-r374-rxx8-8654` affects released Paramiko versions through `4.0.0` and currently has no patched release. This transport can be reconsidered after an upstream Paramiko release contains the fix.
 
-```json
-{
-  "mcpServers": {
-    "docker": {
-      "command": "uvx",
-      "args": [
-        "--python",
-        "3.12",
-        "--from",
-        "https://github.com/X1pheR/mcp-server-docker/releases/download/<release-tag>/<wheel-file>",
-        "mcp-server-docker"
-      ],
-      "env": {
-        "DOCKER_HOST": "ssh://docker-user@docker-host.example.com"
-      }
-    }
-  }
-}
-```
-
-SSH keys, Docker registry credentials and TLS material remain external deployment concerns. Do not commit them to this repository or put secret values in example configuration.
+Docker registry credentials and TLS material remain external deployment concerns. Do not commit them to this repository or put secret values in example configuration.
 
 ## MCP surface
 
@@ -131,7 +112,7 @@ Docker daemon access is the primary authorization boundary. The MCP server does 
 
 Container environment variables and Docker inspect data can expose secrets to the MCP client or model. Prefer an external secret-delivery mechanism rather than placing long-lived credentials in tool arguments.
 
-Image pulls and pushes can contact external registries. Image builds execute Dockerfile instructions through the configured daemon. Review images, build contexts, port bindings, mounts and remote registry targets before allowing write-capable tool use.
+Image pulls and pushes can contact external registries. Image builds execute Dockerfile instructions through the configured daemon. Review images, build contexts, port bindings, mounts and remote registry targets before allowing write-capable tool use. Manually adding Paramiko to restore `ssh://` transport is outside this release's supported dependency set and can reintroduce the advisory described above.
 
 See [`SECURITY.md`](SECURITY.md) for vulnerability reporting and supported-version policy.
 

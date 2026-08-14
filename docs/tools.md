@@ -62,6 +62,6 @@ Two resource templates provide container data by ID or name:
 
 ## Deployment security
 
-The server uses `docker.from_env()` and therefore inherits the authority of the configured Docker endpoint and its credentials. A local Docker socket is effectively a host-root control channel. A remote Docker endpoint can be equally privileged on the remote host.
+The server uses `docker.from_env()` and therefore inherits the authority of the configured Docker endpoint and its credentials. A local Docker socket is effectively a host-root control channel. A remote non-SSH Docker endpoint can be equally privileged on the remote host. Docker `ssh://` endpoints are deliberately not supported by the maintained `0.3.0+x1pher.1` dependency set while released Paramiko versions remain affected by `GHSA-r374-rxx8-8654`.
 
 Use external policy to separate read-only consumer groups from mutation-capable consumers. A read-only MCP allowlist is meaningful; mounting `/var/run/docker.sock` read-only is not sufficient to make Docker API calls read-only.
