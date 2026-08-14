@@ -1,7 +1,7 @@
 [project]
 name = "mcp-server-docker"
 version = "0.3.0+x1pher.1"
-description = "A Docker MCP Server"
+description = "Community-maintained Docker MCP server with safer container recreation and bounded output"
 readme = "README.md"
 dependencies = [
     "docker>=7.1.0",
@@ -28,6 +28,9 @@ Upstream = "https://github.com/ckreiling/mcp-server-docker"
 [[project.authors]]
 name = "Christian Kreiling"
 email = "kreiling@hey.com"
+
+[[project.maintainers]]
+name = "X1pheR"
 
 [dependency-groups]
 dev = [

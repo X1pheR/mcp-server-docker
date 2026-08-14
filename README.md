@@ -21,7 +21,7 @@ The generic filter, build-cleanup and attached-run fixes have also been submitte
 - A Docker Engine reachable through the Python Docker SDK `from_env()` configuration.
 - Docker SDK `7.1.0` or newer within the dependency contract in `pyproject.toml` and the reviewed lockfile.
 
-The maintained live acceptance baseline for this release line is Docker Engine `29.6.2`. CI is daemon-free and does not claim compatibility with every Docker Engine release.
+Docker Engine `29.6.2` is the current live deployment target for this release line. CI is daemon-free; final release acceptance requires controlled live validation against that engine. Broader Docker Engine compatibility is not claimed.
 
 ## Install and run
 
