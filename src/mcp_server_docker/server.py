@@ -1,12 +1,14 @@
 """MCPServer v2 implementation for Docker."""
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal
 
 import docker
+from docker.models.containers import Container
 from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
 from mcp.types import ToolAnnotations
@@ -67,9 +69,240 @@ ContainerLabels = Annotated[
 ]
 AutoRemove = Annotated[bool, Field(description="Automatically remove the container")]
 
+MAX_TEXT_BYTES = 20 * 1024
+
+
+def _bounded_text(value: bytes | bytearray | memoryview | str) -> dict[str, Any]:
+    """Return UTF-8-safe bounded text metadata for Docker output."""
+    raw = (
+        bytes(value)
+        if not isinstance(value, str)
+        else value.encode("utf-8", errors="replace")
+    )
+    total = len(raw)
+    truncated = total > MAX_TEXT_BYTES
+    selected = raw[-MAX_TEXT_BYTES:] if truncated else raw
+    return {
+        "text": selected.decode("utf-8", errors="replace"),
+        "truncated": truncated,
+        "bytes": total,
+    }
+
+
+def _bounded_log_result(value: bytes | bytearray | memoryview | str) -> dict[str, Any]:
+    """Preserve the logs list contract while adding bounded-output metadata."""
+    bounded = _bounded_text(value)
+    return {
+        "logs": bounded["text"].split("\n"),
+        "truncated": bounded["truncated"],
+        "bytes": bounded["bytes"],
+    }
+
+
+def _json_safe(value: Any) -> Any:
+    """Recursively normalize Docker SDK results into JSON-safe values."""
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return _bounded_text(value)
+    if isinstance(value, Mapping):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    return value
+
+
+def _run_result(value: Any, *, detach: bool) -> dict[str, Any]:
+    if isinstance(value, Container):
+        return docker_to_dict(value)
+    if detach:
+        raise TypeError(f"Detached Docker run returned unexpected type: {type(value)}")
+    return {"mode": "attached", "output": _json_safe(value)}
+
+
+_CREATE_CONFIG_KEYS = {
+    "Hostname",
+    "Domainname",
+    "User",
+    "AttachStdin",
+    "AttachStdout",
+    "AttachStderr",
+    "ExposedPorts",
+    "Tty",
+    "OpenStdin",
+    "StdinOnce",
+    "Env",
+    "Cmd",
+    "Healthcheck",
+    "ArgsEscaped",
+    "Image",
+    "Volumes",
+    "WorkingDir",
+    "Entrypoint",
+    "NetworkDisabled",
+    "MacAddress",
+    "OnBuild",
+    "Labels",
+    "StopSignal",
+    "StopTimeout",
+    "Shell",
+}
+_ENDPOINT_CONFIG_KEYS = {
+    "IPAMConfig",
+    "Links",
+    "Aliases",
+    "MacAddress",
+    "DriverOpts",
+    "GwPriority",
+}
+
+
+def _preserve_volume_mounts(payload: dict[str, Any], attrs: Mapping[str, Any]) -> None:
+    """Ensure named and anonymous volumes keep their existing volume identity."""
+    host_config = payload["HostConfig"]
+    binds = list(host_config.get("Binds") or [])
+    bound_destinations = {
+        parts[1] for bind in binds if len(parts := bind.split(":")) >= 2
+    }
+    mounted_destinations = {
+        mount.get("Target")
+        for mount in host_config.get("Mounts") or []
+        if mount.get("Target")
+    }
+    for mount in attrs.get("Mounts") or []:
+        if mount.get("Type") != "volume":
+            continue
+        name = mount.get("Name")
+        destination = mount.get("Destination")
+        if not name or not destination:
+            continue
+        if destination in bound_destinations or destination in mounted_destinations:
+            continue
+        mode = "rw" if mount.get("RW", True) else "ro"
+        binds.append(f"{name}:{destination}:{mode}")
+        bound_destinations.add(destination)
+    if binds:
+        host_config["Binds"] = binds
+
+
+def _build_recreate_payload(container: Container, image: str) -> dict[str, Any]:
+    """Build a Docker create payload from inspected container configuration."""
+    attrs = container.attrs
+    inspected_config = attrs.get("Config")
+    inspected_host_config = attrs.get("HostConfig")
+    if not isinstance(inspected_config, Mapping):
+        raise TypeError("Container inspect data has no usable Config object")
+    if not isinstance(inspected_host_config, Mapping):
+        raise TypeError("Container inspect data has no usable HostConfig object")
+    payload = {
+        key: deepcopy(inspected_config[key])
+        for key in _CREATE_CONFIG_KEYS
+        if key in inspected_config
+    }
+    payload["Image"] = image
+    payload["HostConfig"] = deepcopy(dict(inspected_host_config))
+    hostname = payload.get("Hostname")
+    if isinstance(hostname, str) and hostname and container.id.startswith(hostname):
+        payload["Hostname"] = ""
+    _preserve_volume_mounts(payload, attrs)
+    network_mode = str(payload["HostConfig"].get("NetworkMode") or "")
+    if network_mode not in {"host", "none"} and not network_mode.startswith(
+        "container:"
+    ):
+        endpoints: dict[str, dict[str, Any]] = {}
+        networks = (attrs.get("NetworkSettings") or {}).get("Networks") or {}
+        for network_name, inspected_endpoint in networks.items():
+            endpoint = {
+                key: deepcopy(inspected_endpoint[key])
+                for key in _ENDPOINT_CONFIG_KEYS
+                if inspected_endpoint.get(key) not in (None, "", [], {})
+            }
+            endpoints[network_name] = endpoint
+        if endpoints:
+            payload["NetworkingConfig"] = {"EndpointsConfig": endpoints}
+    return payload
+
+
+def _recreate_existing_container(
+    docker_client: docker.DockerClient, container_id: str, image: str | None = None
+) -> dict[str, Any]:
+    """Recreate a container while preserving inspected runtime configuration."""
+    container = docker_client.containers.get(container_id)
+    container.reload()
+    attrs = container.attrs
+    original_id = container.id
+    original_name = container.name
+    original_image = attrs.get("Image")
+    if not isinstance(original_image, str) or not original_image:
+        raise ValueError("Container inspect data has no immutable image ID")
+    state = attrs.get("State") or {}
+    was_running = bool(state.get("Running"))
+    target_image = image or original_image
+    docker_client.images.get(target_image)
+    original_payload = _build_recreate_payload(container, original_image)
+    replacement_payload = _build_recreate_payload(container, target_image)
+    replacement: Container | None = None
+    if was_running:
+        container.stop()
+    try:
+        container.remove()
+    except docker.errors.NotFound:
+        auto_remove = bool((attrs.get("HostConfig") or {}).get("AutoRemove"))
+        if not (was_running and auto_remove):
+            raise
+    try:
+        created = docker_client.api.create_container_from_config(
+            replacement_payload, name=original_name
+        )
+        replacement = docker_client.containers.get(created["Id"])
+        if was_running:
+            replacement.start()
+        replacement.reload()
+    except Exception as recreate_error:
+        if replacement is not None:
+            try:
+                replacement.remove(force=True)
+            except docker.errors.DockerException:
+                replacement = None
+        try:
+            restored = docker_client.api.create_container_from_config(
+                original_payload, name=original_name
+            )
+            restored_container = docker_client.containers.get(restored["Id"])
+            if was_running:
+                restored_container.start()
+        except Exception as rollback_error:
+            raise RuntimeError(
+                "Container recreation failed and automatic restoration also failed: "
+                f"recreate={recreate_error!r}; restore={rollback_error!r}"
+            ) from rollback_error
+        raise RuntimeError(
+            "Container recreation failed; the original inspected configuration "
+            "was restored successfully"
+        ) from recreate_error
+    labels = (attrs.get("Config") or {}).get("Labels") or {}
+    return docker_to_dict(
+        replacement,
+        {
+            "status": "recreated",
+            "recreated_from": original_id,
+            "configuration_preserved": True,
+            "compose_managed": bool(labels.get("com.docker.compose.project")),
+        },
+    )
+
 
 def _client(ctx: Context[AppContext]) -> docker.DockerClient:
     return ctx.request_context.lifespan_context.docker
+
+
+def _docker_filters(model: BaseModel | None) -> dict[str, Any] | None:
+    """Return Docker SDK filters without unset optional values."""
+    if model is None:
+        return None
+    return {
+        key: value for key, value in model.model_dump().items() if value is not None
+    }
 
 
 @asynccontextmanager
@@ -243,7 +476,7 @@ def list_containers(
     return [
         docker_to_dict(container)
         for container in _client(ctx).containers.list(
-            all=all, filters=filters.model_dump() if filters else None
+            all=all, filters=_docker_filters(filters)
         )
     ]
 
@@ -345,66 +578,46 @@ def run_container(
         bool, Field(description="Automatically remove the container")
     ] = False,
 ) -> dict[str, Any]:
-    return docker_to_dict(
-        _client(ctx).containers.run(
-            image=image,
-            detach=detach,
-            name=name,
-            entrypoint=entrypoint,
-            command=command,
-            network=network,
-            environment=environment,
-            ports=ports,
-            volumes=volumes,
-            labels=labels,
-            auto_remove=auto_remove,
-        )
+    result = _client(ctx).containers.run(
+        image=image,
+        detach=detach,
+        name=name,
+        entrypoint=entrypoint,
+        command=command,
+        network=network,
+        environment=environment,
+        ports=ports,
+        volumes=volumes,
+        labels=labels,
+        auto_remove=auto_remove,
     )
+    return _run_result(result, detach=detach)
 
 
 @app.tool(
-    description="Stop and remove a container, then run a new container. Fails if the container does not exist.",
+    description=(
+        "Recreate an existing container from its inspected runtime configuration, "
+        "optionally replacing only the image. Preserves environment, mounts, "
+        "networks, ports, labels, healthcheck and restart policy."
+    ),
     annotations=ToolAnnotations(
         destructive_hint=True, idempotent_hint=False, open_world_hint=False
     ),
 )
 def recreate_container(
     ctx: Context[AppContext],
-    image: ImageName,
-    container_id: ContainerID | None = None,
-    name: Annotated[str | None, Field(description="Container name")] = None,
-    detach: Detach = True,
-    entrypoint: Entrypoint = None,
-    command: ContainerCommand = None,
-    network: NetworkName = None,
-    environment: Environment = None,
-    ports: PortBindings = None,
-    volumes: VolumeMappings = None,
-    labels: ContainerLabels = None,
-    auto_remove: AutoRemove = False,
+    container_id: ContainerID,
+    image: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Optional replacement image. It must already exist locally; all "
+                "other configuration is preserved from the inspected container."
+            )
+        ),
+    ] = None,
 ) -> dict[str, Any]:
-    if container_id is None and name is None:
-        raise ValueError(
-            "container_id or name is required for identifying the container to stop+remove"
-        )
-    old = _client(ctx).containers.get(container_id or name)
-    old.stop()
-    old.remove()
-    return docker_to_dict(
-        _client(ctx).containers.run(
-            image=image,
-            detach=detach,
-            name=name,
-            entrypoint=entrypoint,
-            command=command,
-            network=network,
-            environment=environment,
-            ports=ports,
-            volumes=volumes,
-            labels=labels,
-            auto_remove=auto_remove,
-        )
-    )
+    return _recreate_existing_container(_client(ctx), container_id, image)
 
 
 @app.tool(
@@ -435,13 +648,8 @@ def fetch_container_logs(
         Field(description="Number of lines to show from the end"),
     ] = 100,
 ) -> dict[str, list[str]]:
-    return {
-        "logs": _client(ctx)
-        .containers.get(container_id)
-        .logs(tail=tail)
-        .decode("utf-8")
-        .split("\n")
-    }
+    logs = _client(ctx).containers.get(container_id).logs(tail=tail)
+    return _bounded_log_result(logs)
 
 
 @app.tool(
@@ -495,7 +703,7 @@ def list_images(
     return [
         docker_to_dict(image)
         for image in _client(ctx).images.list(
-            name=name, all=all, filters=filters.model_dump() if filters else None
+            name=name, all=all, filters=_docker_filters(filters)
         )
     ]
 
@@ -541,7 +749,9 @@ def build_image(
     tag: Annotated[str, Field(description="Image tag")],
     dockerfile: Annotated[str | None, Field(description="Path to Dockerfile")] = None,
 ) -> dict[str, Any]:
-    image, logs = _client(ctx).images.build(path=path, tag=tag, dockerfile=dockerfile)
+    image, logs = _client(ctx).images.build(
+        path=path, tag=tag, dockerfile=dockerfile, rm=True, forcerm=True
+    )
     return {"image": docker_to_dict(image), "logs": list(logs)}
 
 
@@ -574,9 +784,7 @@ def list_networks(
 ) -> list[dict[str, Any]]:
     return [
         docker_to_dict(network)
-        for network in _client(ctx).networks.list(
-            filters=filters.model_dump() if filters else None
-        )
+        for network in _client(ctx).networks.list(filters=_docker_filters(filters))
     ]
 
 

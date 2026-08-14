@@ -58,6 +58,8 @@ class Collection:
 
     def run(self, **kwargs):
         self.calls.append((f"{self.name}.run", kwargs))
+        if kwargs.get("detach") is False:
+            return b"attached\n"
         return Object(self.calls)
 
 
@@ -156,20 +158,17 @@ async def test_tools_have_flat_schemas_and_container_call_semantics(
         )
         assert docker_client.call("containers.create")["image"] == "alpine"
         assert docker_client.call("containers.create")["environment"] == {"X": "1"}
-        await client.call_tool("run_container", {"image": "alpine", "detach": False})
-        assert docker_client.call("containers.run")["detach"] is False
-        await client.call_tool("recreate_container", {"image": "alpine", "name": "old"})
-        assert docker_client.call("containers.get") == "old"
-        assert [name for name, _ in docker_client.calls[-4:]] == [
-            "containers.get",
-            "object.stop",
-            "object.remove",
-            "containers.run",
-        ]
-        recreated = docker_client.call("containers.run")
-        assert (
-            "container_id" not in recreated and "resolved_container_id" not in recreated
+        attached = await client.call_tool(
+            "run_container", {"image": "alpine", "detach": False}
         )
+        assert docker_client.call("containers.run")["detach"] is False
+        assert attached.structured_content["mode"] == "attached"
+        assert attached.structured_content["output"]["text"] == "attached\n"
+        recreate = next(
+            tool for tool in tools.tools if tool.name == "recreate_container"
+        )
+        assert recreate.input_schema["required"] == ["container_id"]
+        assert set(recreate.input_schema["properties"]) == {"container_id", "image"}
         await client.call_tool("start_container", {"container_id": "x"})
         assert docker_client.calls[-2:] == [
             ("containers.get", "x"),
@@ -206,7 +205,7 @@ async def test_image_network_and_volume_call_semantics(server, docker_client):
         assert docker_client.call("images.list") == {
             "name": "alpine",
             "all": True,
-            "filters": {"dangling": True, "label": None},
+            "filters": {"dangling": True},
         }
         await client.call_tool("pull_image", {"repository": "alpine", "tag": "3.20"})
         assert docker_client.call("images.pull") == ("alpine", {"tag": "3.20"})
@@ -220,6 +219,8 @@ async def test_image_network_and_volume_call_semantics(server, docker_client):
             "path": ".",
             "tag": "test",
             "dockerfile": "Dockerfile.test",
+            "rm": True,
+            "forcerm": True,
         }
         await client.call_tool("remove_image", {"image": "test", "force": True})
         assert docker_client.call("images.remove") == {"image": "test", "force": True}

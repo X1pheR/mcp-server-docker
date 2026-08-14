@@ -1,248 +1,145 @@
-# 🐋 Docker MCP server
+# Docker MCP Server
 
-An MCP server for managing Docker with natural language!
+A community-maintained downstream variant of [ckreiling/mcp-server-docker](https://github.com/ckreiling/mcp-server-docker) that keeps the upstream Docker MCP surface while adding a small set of safety and compatibility changes used in maintained deployments.
 
-## 🪩 What can it do?
+This repository is independently maintained by X1pheR. It is not affiliated with or endorsed by the upstream maintainer, Docker, Inc., or the Model Context Protocol project.
 
-- 🚀 Compose containers with natural language
-- 🔍 Introspect & debug running containers
-- 📀 Manage persistent data with Docker volumes
+## Why this variant exists
 
-## ❓ Who is this for?
+The maintained baseline is upstream `v0.3.0` at commit `57a7df208fdc2362505835f670e53c66f3717c48`. The downstream behavior differs in four areas:
 
-- Server administrators: connect to remote Docker engines for e.g. managing a
-  public-facing website.
-- Tinkerers: run containers locally and experiment with open-source apps
-  supporting Docker.
-- AI enthusiasts: push the limits of that an LLM is capable of!
+- attached `run_container` output and `fetch_container_logs` output are UTF-8-safe and bounded to the final 20 KiB, with truncation metadata;
+- `recreate_container` rebuilds an existing container from inspected configuration, preserves its running state and attempts automatic restoration if replacement creation fails;
+- `build_image` forces cleanup of intermediate build containers on successful and failed builds;
+- optional Docker SDK filter fields with no value are omitted instead of being sent as `null`.
 
-## Demo
+The generic filter, build-cleanup and attached-run fixes have also been submitted upstream. The configuration-preserving recreate behavior and output-size policy remain intentional downstream policy. See [`UPSTREAM.md`](UPSTREAM.md) for the exact baseline, tracked upstream pull requests and update procedure.
 
-A quick demo showing a WordPress deployment using natural language:
+## Requirements
 
-https://github.com/user-attachments/assets/65e35e67-bce0-4449-af7e-9f4dd773b4b3
+- Python 3.12 or newer.
+- A Docker Engine reachable through the Python Docker SDK `from_env()` configuration.
+- Docker SDK `7.1.0` or newer within the dependency contract in `pyproject.toml` and the reviewed lockfile.
+- A non-SSH Docker endpoint. This downstream release deliberately does not package Paramiko, so `ssh://` Docker endpoints are not supported.
 
-## 🏎️ Quickstart
+Docker Engine `29.6.2` is the current live deployment target for this release line. CI is daemon-free; final release acceptance requires controlled live validation against that engine. Broader Docker Engine compatibility is not claimed.
 
-### Install
+## Install and run
 
-#### Claude Desktop
+The X1pheR downstream release is distributed through GitHub Releases, not PyPI. Running `uvx mcp-server-docker` without `--from` installs the upstream PyPI package and does **not** install this variant.
 
-On MacOS: `~/Library/Application\ Support/Claude/claude_desktop_config.json`
-
-On Windows: `%APPDATA%/Claude/claude_desktop_config.json`
-
-<details>
-  <summary>Install from PyPi with uv</summary>
-
-If you don't have `uv` installed, follow the installation instructions for your
-system:
-[link](https://docs.astral.sh/uv/getting-started/installation/#installation-methods)
-
-Then add the following to your MCP servers file:
-
-```
-"mcpServers": {
-  "mcp-server-docker": {
-    "command": "uvx",
-    "args": [
-      "mcp-server-docker"
-    ]
-  }
-}
-```
-
-</details>
-
-<details>
-  <summary>Install with Docker</summary>
-
-Purely for convenience, the server can run in a Docker container.
-
-After cloning this repository, build the Docker image:
+For development or pre-release review, clone the repository and use the locked environment:
 
 ```bash
-docker build -t mcp-server-docker .
+git clone https://github.com/X1pheR/mcp-server-docker.git
+cd mcp-server-docker
+uv sync --frozen --all-groups
+uv run mcp-server-docker
 ```
 
-And then add the following to your MCP servers file:
+After an accepted X1pheR release is published, pin production use to that immutable release asset:
 
-```
-"mcpServers": {
-  "mcp-server-docker": {
-    "command": "docker",
-    "args": [
-      "run",
-      "-i",
-      "--rm",
-      "-v",
-      "/var/run/docker.sock:/var/run/docker.sock",
-      "mcp-server-docker:latest"
-    ]
-  }
-}
+```bash
+uvx --python 3.12 \
+  --from "https://github.com/X1pheR/mcp-server-docker/releases/download/<release-tag>/<wheel-file>" \
+  mcp-server-docker
 ```
 
-Note that we mount the Docker socket as a volume; this ensures the MCP server
-can connect to and control the local Docker daemon.
+Example MCP client configuration using a reviewed GitHub Release wheel:
 
-</details>
-
-## 📝 Prompts
-
-### 🎻 `docker_compose`
-
-Use natural language to compose containers. [See above](#demo) for a demo.
-
-Provide a Project Name, and a description of desired containers, and let the LLM
-do the rest.
-
-This prompt instructs the LLM to enter a `plan+apply` loop. Your interaction
-with the LLM will involve the following steps:
-
-1. You give the LLM instructions for which containers to bring up
-2. The LLM calculates a concise natural language plan and presents it to you
-3. You either:
-   - Apply the plan
-   - Provide the LLM feedback, and the LLM recalculates the plan
-
-#### Examples
-
-- name: `nginx`, containers: "deploy an nginx container exposing it on port
-  9000"
-- name: `wordpress`, containers: "deploy a WordPress container and a supporting
-  MySQL container, exposing Wordpress on port 9000"
-
-#### Resuming a Project
-
-When starting a new chat with this prompt, the LLM will receive the status of
-any containers, volumes, and networks created with the given project `name`.
-
-This is mainly useful for cleaning up, in-case you lose a chat that was
-responsible for many containers.
-
-## 📔 Resources
-
-The server exposes resource templates rather than enumerating currently-running containers:
-
-- `docker://containers/{container_id}/logs` (`text/plain`)
-- `docker://containers/{container_id}/stats` (`application/json`)
-
-Read either URI with a Docker container ID or name.
-
-## 🔨 Tools
-
-### Containers
-
-- `list_containers`
-- `create_container`
-- `run_container`
-- `recreate_container`
-- `start_container`
-- `fetch_container_logs`
-- `stop_container`
-- `remove_container`
-
-### Images
-
-- `list_images`
-- `pull_image`
-- `push_image`
-- `build_image`
-- `remove_image`
-
-### Networks
-
-- `list_networks`
-- `create_network`
-- `remove_network`
-
-### Volumes
-
-- `list_volumes`
-- `create_volume`
-- `remove_volume`
-
-## 🚧 Disclaimers
-
-### Sensitive Data
-
-**DO NOT CONFIGURE CONTAINERS WITH SENSITIVE DATA.** This includes API keys,
-database passwords, etc.
-
-Any sensitive data exchanged with the LLM is inherently compromised, unless the
-LLM is running on your local machine.
-
-If you are interested in securely passing secrets to containers, file an issue
-on this repository with your use-case.
-
-### Reviewing Created Containers
-
-Be careful to review the containers that the LLM creates. Docker is not a secure
-sandbox, and therefore the MCP server can potentially impact the host machine
-through Docker.
-
-For safety reasons, this MCP server doesn't support sensitive Docker options
-like `--privileged` or `--cap-add/--cap-drop`. If these features are of interest
-to you, file an issue on this repository with your use-case.
-
-## 🛠️ Configuration
-
-This server uses the Python Docker SDK's `from_env` method. For configuration
-details, see
-[the documentation](https://docker-py.readthedocs.io/en/stable/client.html#docker.client.from_env).
-
-### Connect to Docker over SSH
-
-This MCP server can connect to a remote Docker daemon over SSH.
-
-Simply set a `ssh://` host URL in the MCP server definition:
-
-```
-"mcpServers": {
-  "mcp-server-docker": {
-    "command": "uvx",
-    "args": [
-      "mcp-server-docker"
-    ],
-    "env": {
-      "DOCKER_HOST": "ssh://myusername@myhost.example.com"
+```json
+{
+  "mcpServers": {
+    "docker": {
+      "command": "uvx",
+      "args": [
+        "--python",
+        "3.12",
+        "--from",
+        "https://github.com/X1pheR/mcp-server-docker/releases/download/<release-tag>/<wheel-file>",
+        "mcp-server-docker"
+      ]
     }
   }
 }
 ```
 
-## 💻 Development
+Do not replace `<release-tag>` and `<wheel-file>` with a mutable branch URL for production use.
 
-Prefer using Devbox to configure your development environment. The server uses
-MCP Python SDK v2's high-level `MCPServer` API and can be inspected directly:
+### Run in Docker
 
-```bash
-uv sync --all-groups
-uv run mcp dev src/mcp_server_docker/server.py:app
-# or: npx @modelcontextprotocol/inspector uv run mcp-server-docker
-```
-
-Run the hermetic test and lint suite without a Docker daemon:
+For local evaluation, build the repository checkout and mount the Docker socket:
 
 ```bash
-uv run pytest
-uv run ruff format --check src tests
-uv run ruff check src tests
+docker build -t mcp-server-docker .
+docker run --rm -i \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  mcp-server-docker
 ```
 
-See the `devbox.json` for helpful development commands.
+A Docker socket mount grants the server control over the Docker daemon. Treat that capability as host-root equivalent even if the socket itself is mounted read-only.
 
-After setting up devbox you can configure your Claude MCP config to use it:
+## Configuration
 
+The server uses `docker.from_env()`. Standard Docker SDK environment variables therefore define the daemon connection for supported non-SSH transports, including `DOCKER_HOST` and the Docker TLS variables where applicable. With a normal local Docker installation, no additional environment configuration is required.
+
+`ssh://` Docker endpoints are deliberately outside the supported `0.3.0+x1pher.1` dependency set. Upstream packages Paramiko for Docker-over-SSH, but GitHub advisory `GHSA-r374-rxx8-8654` affects released Paramiko versions through `4.0.0` and currently has no patched release. This transport can be reconsidered after an upstream Paramiko release contains the fix.
+
+Docker registry credentials and TLS material remain external deployment concerns. Do not commit them to this repository or put secret values in example configuration.
+
+## MCP surface
+
+The server exposes the same 19 tool names as upstream `v0.3.0`:
+
+| Capability | Tools |
+|---|---|
+| Read | `list_containers`, `fetch_container_logs`, `list_images`, `list_networks`, `list_volumes` |
+| Write | `create_container`, `run_container`, `start_container`, `stop_container`, `pull_image`, `push_image`, `build_image`, `create_network`, `create_volume` |
+| Destructive | `recreate_container`, `remove_container`, `remove_image`, `remove_network`, `remove_volume` |
+
+See [`docs/tools.md`](docs/tools.md) for the complete tool reference, including important inputs, side effects, guards and security implications.
+
+The server also exposes the upstream `docker_compose` prompt and two resource templates:
+
+- `docker://containers/{container_id}/logs`
+- `docker://containers/{container_id}/stats`
+
+## Security model
+
+Docker daemon access is the primary authorization boundary. The MCP server does not add user authentication or an authorization layer around Docker operations. Restrict both daemon access and which MCP clients can invoke mutation-capable tools.
+
+`create_container` and `run_container` do not expose inputs for privileged mode, added capabilities or device mappings. `recreate_container` is different: it intentionally preserves the inspected `HostConfig` of an existing container, so security-sensitive settings already present on that container can be preserved during recreation.
+
+Container environment variables and Docker inspect data can expose secrets to the MCP client or model. Prefer an external secret-delivery mechanism rather than placing long-lived credentials in tool arguments.
+
+Image pulls and pushes can contact external registries. Image builds execute Dockerfile instructions through the configured daemon. Review images, build contexts, port bindings, mounts and remote registry targets before allowing write-capable tool use. Manually adding Paramiko to restore `ssh://` transport is outside this release's supported dependency set and can reintroduce the advisory described above.
+
+See [`SECURITY.md`](SECURITY.md) for vulnerability reporting and supported-version policy.
+
+## Compatibility and versioning
+
+The first maintained downstream release line is based on upstream `0.3.0`. Downstream package versions use PEP 440 local version identifiers such as `0.3.0+x1pher.1`; corresponding GitHub release tags use `v0.3.0-x1pher.1`.
+
+A new upstream release is not supported automatically. It must be reviewed, the still-required downstream delta must be reapplied or removed explicitly, and the full acceptance path must pass before the baseline changes.
+
+Accepted GitHub Release tags and assets are immutable by maintenance policy. Releases publish a reproducible wheel plus `SHA256SUMS`; GitHub provides the source snapshot for the same tag. This repository does not publish the downstream package to PyPI.
+
+## Development
+
+Run the complete daemon-free verification locally with:
+
+```bash
+uv sync --frozen --all-groups
+uv run --frozen pytest -q
+uv run --frozen ruff format --check src tests
+uv run --frozen ruff check src tests
+uv build
 ```
-  "docker": {
-    "command": "/path/to/repo/.devbox/nix/profile/default/bin/uv",
-    "args": [
-      "--directory",
-      "/path/to/repo/",
-      "run",
-      "mcp-server-docker"
-    ]
-  },
-```
+
+CI uses the same locked dependency graph and build contract. Dependabot refreshes the uv lockfile within declared compatibility ranges and tracks GitHub Actions revisions; dependency pull requests remain review-required and are never accepted solely because CI is green.
+
+A weekly upstream check reports when the upstream release differs from [`upstream.json`](upstream.json). It never merges upstream source automatically.
+
+## License
+
+This downstream variant is distributed under the upstream GNU General Public License v3.0. See [`LICENSE`](LICENSE). Upstream project ownership and governance remain with Christian Kreiling and the upstream repository; this repository maintains only the documented downstream delta.
