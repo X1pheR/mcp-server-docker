@@ -39,20 +39,37 @@ def _container_attrs(*, running: bool = True) -> dict:
             "NetworkMode": "prod",
             "Binds": ["/srv/example:/data:ro"],
             "Mounts": [],
-            "PortBindings": {"8080/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18080"}]},
+            "PortBindings": {
+                "8080/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18080"}]
+            },
             "RestartPolicy": {"Name": "unless-stopped", "MaximumRetryCount": 0},
             "AutoRemove": False,
         },
         "Mounts": [
-            {"Type": "bind", "Source": "/srv/example", "Destination": "/data", "RW": False},
-            {"Type": "volume", "Name": "example-cache-volume", "Destination": "/cache", "RW": True},
+            {
+                "Type": "bind",
+                "Source": "/srv/example",
+                "Destination": "/data",
+                "RW": False,
+            },
+            {
+                "Type": "volume",
+                "Name": "example-cache-volume",
+                "Destination": "/cache",
+                "RW": True,
+            },
         ],
-        "NetworkSettings": {"Networks": {"prod": {
-            "IPAMConfig": {"IPv4Address": "172.20.0.25"},
-            "Aliases": ["example", "example-service"],
-            "NetworkID": "runtime-network-id", "EndpointID": "runtime-endpoint-id",
-            "IPAddress": "172.20.0.25",
-        }}},
+        "NetworkSettings": {
+            "Networks": {
+                "prod": {
+                    "IPAMConfig": {"IPv4Address": "172.20.0.25"},
+                    "Aliases": ["example", "example-service"],
+                    "NetworkID": "runtime-network-id",
+                    "EndpointID": "runtime-endpoint-id",
+                    "IPAddress": "172.20.0.25",
+                }
+            }
+        },
         "State": {"Running": running, "Status": "running" if running else "exited"},
     }
 
@@ -66,7 +83,11 @@ def _mock_container(*, running: bool = True) -> Mock:
 
 
 def test_output_normalization_and_bounds():
-    assert _bounded_text(b"ok\xffend") == {"text": "ok\ufffdend", "truncated": False, "bytes": 6}
+    assert _bounded_text(b"ok\xffend") == {
+        "text": "ok\ufffdend",
+        "truncated": False,
+        "bytes": 6,
+    }
     raw = b"a" * (MAX_TEXT_BYTES + 9)
     bounded = _bounded_text(raw)
     assert bounded["truncated"] is True
@@ -96,7 +117,11 @@ def test_recreate_payload_preserves_configuration():
     endpoint = payload["NetworkingConfig"]["EndpointsConfig"]["prod"]
     assert endpoint["IPAMConfig"]["IPv4Address"] == "172.20.0.25"
     assert endpoint["Aliases"] == ["example", "example-service"]
-    assert "NetworkID" not in endpoint and "EndpointID" not in endpoint and "IPAddress" not in endpoint
+    assert (
+        "NetworkID" not in endpoint
+        and "EndpointID" not in endpoint
+        and "IPAddress" not in endpoint
+    )
     assert container.attrs == original
 
 
@@ -109,7 +134,10 @@ def test_existing_mount_target_is_not_duplicated():
     assert "example-cache-volume:/cache:rw" not in payload["HostConfig"]["Binds"]
 
 
-@patch("mcp_server_docker.server.docker_to_dict", return_value={"status": "recreated", "configuration_preserved": True})
+@patch(
+    "mcp_server_docker.server.docker_to_dict",
+    return_value={"status": "recreated", "configuration_preserved": True},
+)
 def test_recreate_success_preserves_running_state(converter: Mock):
     original = _mock_container(running=True)
     replacement = _mock_container(running=True)
@@ -162,7 +190,8 @@ def test_failed_recreate_restores_original_configuration():
     client = Mock()
     client.containers.get.side_effect = [original, restored]
     client.api.create_container_from_config.side_effect = [
-        RuntimeError("create failed"), {"Id": restored.id}
+        RuntimeError("create failed"),
+        {"Id": restored.id},
     ]
     with pytest.raises(RuntimeError, match="restored successfully"):
         _recreate_existing_container(client, "example-container", "example:new")

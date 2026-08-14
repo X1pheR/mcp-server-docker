@@ -121,14 +121,39 @@ def _run_result(value: Any, *, detach: bool) -> dict[str, Any]:
 
 
 _CREATE_CONFIG_KEYS = {
-    "Hostname", "Domainname", "User", "AttachStdin", "AttachStdout",
-    "AttachStderr", "ExposedPorts", "Tty", "OpenStdin", "StdinOnce",
-    "Env", "Cmd", "Healthcheck", "ArgsEscaped", "Image", "Volumes",
-    "WorkingDir", "Entrypoint", "NetworkDisabled", "MacAddress", "OnBuild",
-    "Labels", "StopSignal", "StopTimeout", "Shell",
+    "Hostname",
+    "Domainname",
+    "User",
+    "AttachStdin",
+    "AttachStdout",
+    "AttachStderr",
+    "ExposedPorts",
+    "Tty",
+    "OpenStdin",
+    "StdinOnce",
+    "Env",
+    "Cmd",
+    "Healthcheck",
+    "ArgsEscaped",
+    "Image",
+    "Volumes",
+    "WorkingDir",
+    "Entrypoint",
+    "NetworkDisabled",
+    "MacAddress",
+    "OnBuild",
+    "Labels",
+    "StopSignal",
+    "StopTimeout",
+    "Shell",
 }
 _ENDPOINT_CONFIG_KEYS = {
-    "IPAMConfig", "Links", "Aliases", "MacAddress", "DriverOpts", "GwPriority",
+    "IPAMConfig",
+    "Links",
+    "Aliases",
+    "MacAddress",
+    "DriverOpts",
+    "GwPriority",
 }
 
 
@@ -181,7 +206,9 @@ def _build_recreate_payload(container: Container, image: str) -> dict[str, Any]:
         payload["Hostname"] = ""
     _preserve_volume_mounts(payload, attrs)
     network_mode = str(payload["HostConfig"].get("NetworkMode") or "")
-    if network_mode not in {"host", "none"} and not network_mode.startswith("container:"):
+    if network_mode not in {"host", "none"} and not network_mode.startswith(
+        "container:"
+    ):
         endpoints: dict[str, dict[str, Any]] = {}
         networks = (attrs.get("NetworkSettings") or {}).get("Networks") or {}
         for network_name, inspected_endpoint in networks.items():
@@ -253,7 +280,7 @@ def _recreate_existing_container(
             "Container recreation failed; the original inspected configuration "
             "was restored successfully"
         ) from recreate_error
-    labels = ((attrs.get("Config") or {}).get("Labels") or {})
+    labels = (attrs.get("Config") or {}).get("Labels") or {}
     return docker_to_dict(
         replacement,
         {
@@ -273,7 +300,9 @@ def _docker_filters(model: BaseModel | None) -> dict[str, Any] | None:
     """Return Docker SDK filters without unset optional values."""
     if model is None:
         return None
-    return {key: value for key, value in model.model_dump().items() if value is not None}
+    return {
+        key: value for key, value in model.model_dump().items() if value is not None
+    }
 
 
 @asynccontextmanager
@@ -755,9 +784,7 @@ def list_networks(
 ) -> list[dict[str, Any]]:
     return [
         docker_to_dict(network)
-        for network in _client(ctx).networks.list(
-            filters=_docker_filters(filters)
-        )
+        for network in _client(ctx).networks.list(filters=_docker_filters(filters))
     ]
 
 

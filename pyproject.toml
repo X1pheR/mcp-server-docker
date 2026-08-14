@@ -1,6 +1,6 @@
 [project]
 name = "mcp-server-docker"
-version = "0.3.0"
+version = "0.3.0+x1pher.1"
 description = "A Docker MCP Server"
 readme = "README.md"
 dependencies = [
@@ -20,8 +20,10 @@ classifiers = [
 ]
 
 [project.urls]
-Repository = "https://github.com/ckreiling/mcp-server-docker"
-Issues = "https://github.com/ckreiling/mcp-server-docker/issues"
+Repository = "https://github.com/X1pheR/mcp-server-docker"
+Documentation = "https://github.com/X1pheR/mcp-server-docker#readme"
+Issues = "https://github.com/X1pheR/mcp-server-docker/issues"
+Upstream = "https://github.com/ckreiling/mcp-server-docker"
 
 [[project.authors]]
 name = "Christian Kreiling"

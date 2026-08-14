@@ -1,0 +1,34 @@
+name: Upstream check
+
+on:
+  schedule:
+    - cron: "17 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Compare maintained upstream release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$(python -c 'import json; print(json.load(open("upstream.json"))["release"])')"
+          latest="$(gh api repos/ckreiling/mcp-server-docker/releases/latest --jq .tag_name)"
+          {
+            echo "## Docker MCP upstream check"
+            echo
+            echo "Maintained baseline: \`${expected}\`"
+            echo "Latest upstream release: \`${latest}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [ "${latest}" != "${expected}" ]; then
+            echo "Upstream release changed: ${expected} -> ${latest}" >&2
+            exit 1
+          fi

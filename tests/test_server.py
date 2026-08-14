@@ -158,11 +158,15 @@ async def test_tools_have_flat_schemas_and_container_call_semantics(
         )
         assert docker_client.call("containers.create")["image"] == "alpine"
         assert docker_client.call("containers.create")["environment"] == {"X": "1"}
-        attached = await client.call_tool("run_container", {"image": "alpine", "detach": False})
+        attached = await client.call_tool(
+            "run_container", {"image": "alpine", "detach": False}
+        )
         assert docker_client.call("containers.run")["detach"] is False
         assert attached.structured_content["mode"] == "attached"
         assert attached.structured_content["output"]["text"] == "attached\n"
-        recreate = next(tool for tool in tools.tools if tool.name == "recreate_container")
+        recreate = next(
+            tool for tool in tools.tools if tool.name == "recreate_container"
+        )
         assert recreate.input_schema["required"] == ["container_id"]
         assert set(recreate.input_schema["properties"]) == {"container_id", "image"}
         await client.call_tool("start_container", {"container_id": "x"})

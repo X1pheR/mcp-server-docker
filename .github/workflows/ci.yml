@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up uv
+        uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
+        with:
+          version: "0.12.4"
+          python-version: "3.12"
+      - name: Sync locked dependencies
+        run: uv sync --frozen --all-groups
+      - name: Verify package and server versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run --frozen python - <<'PY'
+          import importlib.metadata
+          import tomllib
+          from mcp_server_docker._version import __version__
+
+          project = tomllib.load(open("pyproject.toml", "rb"))["project"]["version"]
+          installed = importlib.metadata.version("mcp-server-docker")
+          assert installed == project == __version__, (installed, project, __version__)
+          PY
+      - name: Run tests
+        run: uv run --frozen pytest -q
+      - name: Check formatting
+        run: uv run --frozen ruff format --check src tests
+      - name: Run lint
+        run: uv run --frozen ruff check src tests
+      - name: Build package
+        run: uv build --out-dir dist
