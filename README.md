@@ -1,5 +1,7 @@
 # Docker MCP Server
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/X1pheR/mcp-server-docker/badge)](https://scorecard.dev/viewer/?uri=github.com/X1pheR/mcp-server-docker)
+
 A community-maintained downstream variant of [ckreiling/mcp-server-docker](https://github.com/ckreiling/mcp-server-docker) that keeps the upstream Docker MCP surface while adding a small set of safety and compatibility changes used in maintained deployments.
 
 This repository is independently maintained by X1pheR. It is not affiliated with or endorsed by the upstream maintainer, Docker, Inc., or the Model Context Protocol project.
@@ -116,13 +118,19 @@ Image pulls and pushes can contact external registries. Image builds execute Doc
 
 See [`SECURITY.md`](SECURITY.md) for vulnerability reporting and supported-version policy.
 
+## Feedback and contributions
+
+Use [GitHub Issues](https://github.com/X1pheR/mcp-server-docker/issues) for bug reports and focused proposals and pull requests for proposed downstream changes. See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, upstream-baseline requirements, tests, and change expectations. Security issues must follow the private process in [SECURITY.md](SECURITY.md).
+
+User-visible downstream release changes are summarized in [CHANGELOG.md](CHANGELOG.md).
+
 ## Compatibility and versioning
 
 The first maintained downstream release line is based on upstream `0.3.0`. Downstream package versions use PEP 440 local version identifiers such as `0.3.0+x1pher.1`; corresponding GitHub release tags use `v0.3.0-x1pher.1`.
 
 A new upstream release is not supported automatically. It must be reviewed, the still-required downstream delta must be reapplied or removed explicitly, and the full acceptance path must pass before the baseline changes.
 
-Accepted GitHub Release tags and assets are immutable by maintenance policy. Releases publish a reproducible wheel plus `SHA256SUMS`; GitHub provides the source snapshot for the same tag. This repository does not publish the downstream package to PyPI.
+Accepted GitHub Release tags and assets are immutable by maintenance policy. The current release is `v0.3.0-x1pher.1`. Future releases publish a reproducible wheel plus `SHA256SUMS` and signed GitHub/Sigstore build provenance; GitHub provides the source snapshot for the same tag. This repository does not publish the downstream package to PyPI.
 
 ## Development
 
@@ -136,7 +144,9 @@ uv run --frozen ruff check src tests
 uv build
 ```
 
-CI uses the same locked dependency graph and build contract. Dependabot refreshes the uv lockfile within declared compatibility ranges and tracks GitHub Actions revisions; dependency pull requests remain review-required and are never accepted solely because CI is green.
+CI uses the same locked dependency graph and build contract. Dependabot refreshes the uv lockfile within declared compatibility ranges and tracks GitHub Actions revisions; dependency pull requests remain review-required and are never accepted solely because CI is green. OpenSSF Scorecard runs on `main` and weekly and publishes its public result for independent repository-security review.
+
+Normal development does not publish a release. An accepted downstream version tag matching the package version triggers the release workflow, which verifies the exact tag/source, reruns daemon-free verification, proves two independent wheel builds are byte-identical, generates signed provenance, creates a draft release, attaches the wheel, `SHA256SUMS` and provenance bundle, and only then publishes the release.
 
 A weekly upstream check reports when the upstream release differs from [`upstream.json`](upstream.json). It never merges upstream source automatically.
 

@@ -2,9 +2,9 @@
 
 ## Reporting a vulnerability
 
-Please report vulnerabilities through GitHub private vulnerability reporting when it is available for this repository. Do not include credentials, Docker configuration, container environment values, private image names or other secrets in a public issue.
+Please report vulnerabilities through [GitHub private vulnerability reporting](https://github.com/X1pheR/mcp-server-docker/security/advisories/new). Do not include credentials, Docker configuration, container environment values, private image names or other secrets in a public issue.
 
-If private vulnerability reporting is unavailable, open a public issue containing only enough non-sensitive information to request a private follow-up channel.
+If private vulnerability reporting is unexpectedly unavailable, open a public issue containing only enough non-sensitive information to request a private follow-up channel.
 
 ## Scope
 
@@ -25,6 +25,12 @@ The maintained `0.3.0+x1pher.1` dependency set intentionally excludes Paramiko a
 
 ## Supported version
 
-Until the first immutable X1pheR release is published, only the current reviewed `main` revision is maintained. After releases begin, the latest accepted X1pheR GitHub Release is the supported line unless a release note states otherwise.
+The latest accepted X1pheR GitHub Release is the supported public line unless a release note states otherwise. Security fixes are developed on the reviewed `main` branch and released through the normal downstream release lifecycle.
 
 Upstream-only issues that are unchanged by this downstream variant should also be reported to the upstream project when appropriate.
+
+## Dependency and code security
+
+The repository uses a committed uv lock file, full-SHA-pinned GitHub Actions, daemon-free CI/package verification, Dependabot, upstream release tracking and OpenSSF Scorecard. Public-release acceptance also requires applicable GitHub-native dependency alerts, secret scanning with push protection and CodeQL code scanning to be reviewed and green before a release is published.
+
+These controls supplement rather than replace review of the documented downstream delta and controlled live Docker Engine acceptance for runtime-behavior changes.
