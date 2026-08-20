@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
@@ -199,3 +200,16 @@ def test_failed_recreate_restores_original_configuration():
     rollback = client.api.create_container_from_config.call_args_list[1].args[0]
     assert rollback["Image"] == "sha256:old-image"
     restored.start.assert_called_once_with()
+
+
+def test_dockerfile_base_images_are_digest_pinned():
+    dockerfile = Path(__file__).resolve().parents[1] / "Dockerfile"
+    from_lines = [
+        line.strip()
+        for line in dockerfile.read_text().splitlines()
+        if line.lstrip().startswith("FROM ")
+    ]
+    assert from_lines
+    for line in from_lines:
+        image = line.split()[1]
+        assert "@sha256:" in image, f"Docker base image is not digest-pinned: {image}"
