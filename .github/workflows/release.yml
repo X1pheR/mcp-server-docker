@@ -39,7 +39,7 @@ jobs:
         with:
           version: "0.12.4"
           python-version: "3.12"
-      - name: Verify tag, source and tests
+      - name: Verify tag and source
         shell: bash
         run: |
           set -euo pipefail
@@ -56,10 +56,8 @@ jobs:
           else
             git merge-base --is-ancestor "${EXPECTED_SHA}" origin/main
           fi
-          uv sync --frozen --all-groups
-          uv run --frozen pytest -q
-          uv run --frozen ruff format --check src tests
-          uv run --frozen ruff check src tests
+      - name: Run canonical repository verifier
+        run: ./scripts/verify.sh
       - name: Build reproducible release assets
         shell: bash
         run: |
