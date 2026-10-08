@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "name": "MCP Server Docker",
+  "category": "Infrastructure",
+  "kind": "mcp-server",
+  "upstream": {
+    "repository": "ckreiling/mcp-server-docker",
+    "reason": "Adds bounded safety and compatibility behavior required by maintained deployments that is not currently available upstream."
+  }
+}
