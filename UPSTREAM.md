@@ -67,3 +67,103 @@ When the weekly upstream check reports a different upstream release:
 11. update `upstream.json` only after the new baseline and remaining delta are reviewed.
 
 Do not automatically merge upstream source or Dependabot pull requests. Green CI is necessary but is not sufficient approval for a dependency, compatibility or upstream-baseline change.
+
+## Machine-readable downstream patch register
+
+This inline register is the product-owned logical-patch projection used by SDLC-09 structural verification. Its state does not replace current GitHub issue/PR verification, an actual upstream-compatible tested diff, or any required operator-approved product ADR. Unlinked rows are explicitly nonconformant; no historical fork behavior has been grandfathered. Cross-product integration and release actions remain gated separately. Patch scope and local commit mappings require further semantic review before external contribution.
+
+<!-- SDLC-UPSTREAM-REGISTER:1 -->
+```json
+{
+  "schema_version": 1,
+  "upstream": "ckreiling/mcp-server-docker",
+  "baseline": "v0.3.0",
+  "patches": [
+    {
+      "id": "DK-P01",
+      "kind": "upstream",
+      "scope": "Attached Docker container run result type normalization",
+      "local_commits": [
+        "2f6020b"
+      ],
+      "checked_on": "2026-10-10",
+      "issue": null,
+      "pr": "https://github.com/ckreiling/mcp-server-docker/pull/61",
+      "pr_state": "open"
+    },
+    {
+      "id": "DK-P02",
+      "kind": "upstream",
+      "scope": "Bounded Docker output and deterministic truncation metadata",
+      "local_commits": [
+        "2f6020b"
+      ],
+      "checked_on": "2026-10-10",
+      "issue": null,
+      "pr": null
+    },
+    {
+      "id": "DK-P03",
+      "kind": "upstream",
+      "scope": "Configuration-preserving Docker container recreation with rollback safeguards",
+      "local_commits": [
+        "2f6020b"
+      ],
+      "checked_on": "2026-10-10",
+      "issue": null,
+      "pr": null
+    },
+    {
+      "id": "DK-P04",
+      "kind": "upstream",
+      "scope": "Docker build intermediate container cleanup",
+      "local_commits": [
+        "2f6020b"
+      ],
+      "checked_on": "2026-10-10",
+      "issue": null,
+      "pr": "https://github.com/ckreiling/mcp-server-docker/pull/60",
+      "pr_state": "open"
+    },
+    {
+      "id": "DK-P05",
+      "kind": "upstream",
+      "scope": "Omit unset values when normalizing Docker SDK filters",
+      "local_commits": [
+        "2f6020b"
+      ],
+      "checked_on": "2026-10-10",
+      "issue": null,
+      "pr": "https://github.com/ckreiling/mcp-server-docker/pull/59",
+      "pr_state": "open"
+    },
+    {
+      "id": "DK-P06",
+      "kind": "upstream",
+      "scope": "Paramiko vulnerability mitigation by removing optional SSH transport dependency",
+      "local_commits": [
+        "2f6020b"
+      ],
+      "checked_on": "2026-10-10",
+      "issue": null,
+      "pr": null
+    },
+    {
+      "id": "DK-P07",
+      "kind": "upstream",
+      "scope": "Source verification, release packaging and downstream publication",
+      "local_commits": [
+        "49a43c7",
+        "f56fed0"
+      ],
+      "checked_on": "2026-10-10",
+      "issue": null,
+      "pr": null
+    }
+  ]
+}
+```
+
+## Convergence lifecycle
+
+Verify existing upstream issues and PRs, current default-branch equivalence, and source-owned regression evidence before submitting missing contributions. A PR that is closed without merge is nonconformant, and a merged PR is not automatically present in an immutable official release. Remove a downstream patch only on a tested candidate against a suitable released upstream artifact. Retire the fork only after verified patch elimination, accepted distribution/ADR disposition, rollback readiness, consumer parity, and separate operator approval for production/retirement.
