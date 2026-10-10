@@ -27,7 +27,7 @@ The implementation preserves the inspected container configuration, `HostConfig`
 
 If replacement creation fails after the original container has been removed, the server attempts to recreate the original inspected configuration and restore the prior running state. The rollback is best-effort: if both replacement and restoration fail, the tool returns a hard failure containing both error contexts. Container IDs necessarily change during successful recreation or restoration.
 
-This behavior remains an unapproved downstream variation. The accepted upstream-first standard requires resolution of [upstream issue #62](https://github.com/ckreiling/mcp-server-docker/issues/62) through an upstream-compatible PR, or a separately operator-approved exact-scope product ADR. No such PR or approval is recorded.
+This behavior remains a not-yet-upstream-accepted downstream variation. [Upstream issue #62](https://github.com/ckreiling/mcp-server-docker/issues/62) now has [draft PR #74](https://github.com/ckreiling/mcp-server-docker/pull/74), proposing optional `preserve_existing` mode while retaining upstream legacy defaults. Exact fork head `708e2d27eb23153fbbb39c223d21948b39d7feea` passed 15 Python tests including nine recreation regressions, plus two live tests using disposable isolated Alpine containers: successful preservation and recovery after a deliberately injected create failure. This is not a maintainer-approved design or an official release; no exact-scope product ADR has been accepted. Removal of our downstream behavior requires upstream merge, suitable immutable release and separate product/consumer acceptance.
 
 ### Build-intermediate cleanup
 
@@ -115,7 +115,8 @@ This inline register is the product-owned logical-patch projection used by SDLC-
       ],
       "checked_on": "2026-10-10",
       "issue": "https://github.com/ckreiling/mcp-server-docker/issues/62",
-      "pr": null
+      "pr": "https://github.com/ckreiling/mcp-server-docker/pull/74",
+      "pr_state": "draft"
     },
     {
       "id": "DK-P04",
