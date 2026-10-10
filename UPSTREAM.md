@@ -27,7 +27,7 @@ The implementation preserves the inspected container configuration, `HostConfig`
 
 If replacement creation fails after the original container has been removed, the server attempts to recreate the original inspected configuration and restore the prior running state. The rollback is best-effort: if both replacement and restoration fail, the tool returns a hard failure containing both error contexts. Container IDs necessarily change during successful recreation or restoration.
 
-This behavior is intentionally maintained downstream rather than treated as an upstream-compatible bug fix.
+This behavior remains an unapproved downstream variation. The accepted upstream-first standard requires resolution of [upstream issue #62](https://github.com/ckreiling/mcp-server-docker/issues/62) through an upstream-compatible PR, or a separately operator-approved exact-scope product ADR. No such PR or approval is recorded.
 
 ### Build-intermediate cleanup
 
@@ -87,7 +87,7 @@ This inline register is the product-owned logical-patch projection used by SDLC-
         "2f6020b"
       ],
       "checked_on": "2026-10-10",
-      "issue": null,
+      "issue": "https://github.com/ckreiling/mcp-server-docker/issues/69",
       "pr": "https://github.com/ckreiling/mcp-server-docker/pull/61",
       "pr_state": "open"
     },
@@ -110,7 +110,7 @@ This inline register is the product-owned logical-patch projection used by SDLC-
         "2f6020b"
       ],
       "checked_on": "2026-10-10",
-      "issue": null,
+      "issue": "https://github.com/ckreiling/mcp-server-docker/issues/62",
       "pr": null
     },
     {
@@ -121,7 +121,7 @@ This inline register is the product-owned logical-patch projection used by SDLC-
         "2f6020b"
       ],
       "checked_on": "2026-10-10",
-      "issue": null,
+      "issue": "https://github.com/ckreiling/mcp-server-docker/issues/68",
       "pr": "https://github.com/ckreiling/mcp-server-docker/pull/60",
       "pr_state": "open"
     },
@@ -133,7 +133,7 @@ This inline register is the product-owned logical-patch projection used by SDLC-
         "2f6020b"
       ],
       "checked_on": "2026-10-10",
-      "issue": null,
+      "issue": "https://github.com/ckreiling/mcp-server-docker/issues/67",
       "pr": "https://github.com/ckreiling/mcp-server-docker/pull/59",
       "pr_state": "open"
     },
