@@ -40,9 +40,13 @@ Container, image and network filter models are serialized with unset optional va
 
 ### SSH transport dependency exclusion
 
-Upstream declares Paramiko as a direct dependency so Docker `ssh://` endpoints work out of the box. This downstream release does not package Paramiko because GitHub advisory `GHSA-r374-rxx8-8654` affects released Paramiko versions through `4.0.0` and currently has no patched release. The supported release therefore uses non-SSH Docker endpoints only.
+The official upstream distribution still requires `paramiko>=3.5.1,<4.0`, which includes versions affected by advisory `GHSA-r374-rxx8-8654`. **Paramiko 5.0.0 was actually published on 2026-05-09**, removing SHA-1 SSH algorithms; older documentation stating no patched release exists is superseded. This downstream deliberately excludes Paramiko and supports non-SSH Docker endpoints only.
 
-This is a packaging/security delta rather than an MCP tool-surface change. Reconsider it when Paramiko publishes a release containing upstream fix commit `a4489456b6f65281e172380cc4826cee5e851dbb`; do not re-add the dependency merely because a newer version number exists.
+Existing upstream issue [#72](https://github.com/ckreiling/mcp-server-docker/issues/72) and [draft PR #73](https://github.com/ckreiling/mcp-server-docker/pull/73) propose an optional `[ssh]` extra with Paramiko 5 for SSH-capable installs while leaving non-SSH default installations free from Paramiko. Exact PR head `53219aefba14f832bab2aed41b935c9988dbe63d` passed eight official upstream tests, Ruff, default/extra package resolution, mocked Docker SDK SSH-adapter construction and offline sdist/wheel checks. Real SSH-server compatibility, upstream CI/maintainer acceptance, merge and immutable release adoption are **not** yet proven.
+
+### Generic bounded Docker text output: partial upstream coverage
+
+Retained `fetch_container_logs` and attached `run_container(detach=false)` output bounds are one logical safety-policy patch (DK-P02). Upstream issue [#70](https://github.com/ckreiling/mcp-server-docker/issues/70) and [draft PR #71](https://github.com/ckreiling/mcp-server-docker/pull/71) cover **only the log half**. Exact PR head `5313a52c4adae60b64fb44c51dfea5d67e308c55` passed eight upstream tests including fake-Docker stdio, Ruff and formatter checks. The underlying Docker SDK still eagerly loads log bytes; the response is bounded but input memory consumption is not. The attached-run half depends on accepted upstream PR #61 and must get an upstream-compatible bounded result before this **single logical patch is compliant**. The machine register intentionally keeps DK-P02's PR field unset rather than laundering partial coverage into full issue/PR compliance.
 
 ## Maintenance-only differences
 
@@ -99,7 +103,7 @@ This inline register is the product-owned logical-patch projection used by SDLC-
         "2f6020b"
       ],
       "checked_on": "2026-10-10",
-      "issue": null,
+      "issue": "https://github.com/ckreiling/mcp-server-docker/issues/70",
       "pr": null
     },
     {
@@ -145,8 +149,9 @@ This inline register is the product-owned logical-patch projection used by SDLC-
         "2f6020b"
       ],
       "checked_on": "2026-10-10",
-      "issue": null,
-      "pr": null
+      "issue": "https://github.com/ckreiling/mcp-server-docker/issues/72",
+      "pr": "https://github.com/ckreiling/mcp-server-docker/pull/73",
+      "pr_state": "draft"
     },
     {
       "id": "DK-P07",
