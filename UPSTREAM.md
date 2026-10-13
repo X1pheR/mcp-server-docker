@@ -44,9 +44,11 @@ The official upstream distribution still requires `paramiko>=3.5.1,<4.0`, which 
 
 Existing upstream issue [#72](https://github.com/ckreiling/mcp-server-docker/issues/72) and [draft PR #73](https://github.com/ckreiling/mcp-server-docker/pull/73) propose an optional `[ssh]` extra with Paramiko 5 for SSH-capable installs while leaving non-SSH default installations free from Paramiko. Exact PR head `53219aefba14f832bab2aed41b935c9988dbe63d` passed eight official upstream tests, Ruff, default/extra package resolution, mocked Docker SDK SSH-adapter construction and offline sdist/wheel checks. Real SSH-server compatibility, upstream CI/maintainer acceptance, merge and immutable release adoption are **not** yet proven.
 
-### Generic bounded Docker text output: partial upstream coverage
+### Generic bounded Docker text output: complete published contribution coverage
 
-Retained `fetch_container_logs` and attached `run_container(detach=false)` output bounds are one logical safety-policy patch (DK-P02). Upstream issue [#70](https://github.com/ckreiling/mcp-server-docker/issues/70) and [draft PR #71](https://github.com/ckreiling/mcp-server-docker/pull/71) cover **only the log half**. Exact PR head `5313a52c4adae60b64fb44c51dfea5d67e308c55` passed eight upstream tests including fake-Docker stdio, Ruff and formatter checks. The underlying Docker SDK still eagerly loads log bytes; the response is bounded but input memory consumption is not. The attached-run half depends on accepted upstream PR #61 and must get an upstream-compatible bounded result before this **single logical patch is compliant**. The machine register intentionally keeps DK-P02's PR field unset rather than laundering partial coverage into full issue/PR compliance.
+Retained log and attached-execution bounds remain one logical patch DK-P02. Issue #70 now has published draft PR #71 for logs (head `5313a52c4adae60b64fb44c51dfea5d67e308c55`) and existing PR #61 for attached execution (head `211ba6db0e42e6e1a69f2ec37178ba4a6ea6652a`). The register uses PR #71 as the primary link; PR #61 is the mandatory companion. Both contributions must be accepted for functional upstream convergence. Each selects the last 20 KiB of raw bytes before replacement decoding, with original byte-count and truncation metadata. Attached output preserves the upstream flat string response rather than the downstream nested metadata shape. Input retrieval remains eager and replacement characters can increase encoded response size; no process-memory guarantee is implied.
+
+Attached TDD reproduced 13 missing-behavior failures, followed by 18 passing tests and the remaining stdio launch test passing with the existing synthetic Docker version API fixture. Ruff, formatting, source distribution and wheel builds passed. Independent static review passed. Evidence: `/srv/hypershell/reports/sdlc09-20261011/docker-attached-61-{red,green,stdio-build,package}.log`; successful managed publication `run-20261013T225213013644Z-93e83ed6c61e` verified exact SHA, upstream PR identity and unchanged canonical root using live helper `42344ebda0df0dc2fa8232d733b9dd8a0a1ed7b493db6d43984b24a38a5f7546`. Official GitHub readback confirmed PR #61 open/unmerged and the exact accepted head. Existing log evidence is reused. No product release, production change or patch retirement occurred.
 
 ## Maintenance-only differences
 
@@ -102,9 +104,10 @@ This inline register is the product-owned logical-patch projection used by SDLC-
       "local_commits": [
         "2f6020b"
       ],
-      "checked_on": "2026-10-10",
+      "checked_on": "2026-10-13",
       "issue": "https://github.com/ckreiling/mcp-server-docker/issues/70",
-      "pr": null
+      "pr": "https://github.com/ckreiling/mcp-server-docker/pull/71",
+      "pr_state": "draft"
     },
     {
       "id": "DK-P03",
