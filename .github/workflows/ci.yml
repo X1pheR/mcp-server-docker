@@ -17,3 +17,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Run canonical repository verifier
         run: ./scripts/verify.sh
+      - name: Verify public SDLC downstream tracking contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact="${RUNNER_TEMP}/sdlc-conformance.py"
+          curl --fail --location --silent --show-error --retry 2 \
+            "https://raw.githubusercontent.com/X1pheR/resources/bf26878d05622e1e966eadc8fedfc1ada97c5252/scripts/sdlc/sdlc-conformance.py" \
+            --output "${artifact}"
+          echo "95241d2d173c695ff80cfaec5275493d9f8452d52c202e68ceaaac6ecc4eb0cc  ${artifact}" | sha256sum --check --status
+          python3 "${artifact}" --public-repo "${GITHUB_WORKSPACE}" --json
