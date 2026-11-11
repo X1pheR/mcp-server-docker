@@ -92,7 +92,7 @@ This inline register is the product-owned logical-patch projection used by SDLC-
       "local_commits": [
         "2f6020b"
       ],
-      "checked_on": "2026-10-10",
+      "checked_on": "2026-11-11",
       "issue": "https://github.com/ckreiling/mcp-server-docker/issues/69",
       "pr": "https://github.com/ckreiling/mcp-server-docker/pull/61",
       "pr_state": "open"
@@ -104,7 +104,7 @@ This inline register is the product-owned logical-patch projection used by SDLC-
       "local_commits": [
         "2f6020b"
       ],
-      "checked_on": "2026-10-13",
+      "checked_on": "2026-11-11",
       "issue": "https://github.com/ckreiling/mcp-server-docker/issues/70",
       "pr": "https://github.com/ckreiling/mcp-server-docker/pull/71",
       "pr_state": "draft"
@@ -116,7 +116,7 @@ This inline register is the product-owned logical-patch projection used by SDLC-
       "local_commits": [
         "2f6020b"
       ],
-      "checked_on": "2026-10-10",
+      "checked_on": "2026-11-11",
       "issue": "https://github.com/ckreiling/mcp-server-docker/issues/62",
       "pr": "https://github.com/ckreiling/mcp-server-docker/pull/74",
       "pr_state": "draft"
@@ -128,7 +128,7 @@ This inline register is the product-owned logical-patch projection used by SDLC-
       "local_commits": [
         "2f6020b"
       ],
-      "checked_on": "2026-10-10",
+      "checked_on": "2026-11-11",
       "issue": "https://github.com/ckreiling/mcp-server-docker/issues/68",
       "pr": "https://github.com/ckreiling/mcp-server-docker/pull/60",
       "pr_state": "open"
@@ -140,7 +140,7 @@ This inline register is the product-owned logical-patch projection used by SDLC-
       "local_commits": [
         "2f6020b"
       ],
-      "checked_on": "2026-10-10",
+      "checked_on": "2026-11-11",
       "issue": "https://github.com/ckreiling/mcp-server-docker/issues/67",
       "pr": "https://github.com/ckreiling/mcp-server-docker/pull/59",
       "pr_state": "open"
@@ -152,22 +152,30 @@ This inline register is the product-owned logical-patch projection used by SDLC-
       "local_commits": [
         "2f6020b"
       ],
-      "checked_on": "2026-10-10",
+      "checked_on": "2026-11-11",
       "issue": "https://github.com/ckreiling/mcp-server-docker/issues/72",
       "pr": "https://github.com/ckreiling/mcp-server-docker/pull/73",
       "pr_state": "draft"
     },
     {
       "id": "DK-P07",
-      "kind": "upstream",
-      "scope": "Source verification, release packaging and downstream publication",
+      "kind": "distribution",
+      "scope": "Temporary X1pheR package version and own image/release workflow used to distribute tracked Docker MCP source fixes until suitable official upstream artifacts are available",
       "local_commits": [
         "49a43c7",
         "f56fed0"
       ],
-      "checked_on": "2026-10-10",
-      "issue": null,
-      "pr": null
+      "checked_on": "2026-11-11",
+      "temporary": true,
+      "depends_on": [
+        "DK-P01",
+        "DK-P02",
+        "DK-P03",
+        "DK-P04",
+        "DK-P05",
+        "DK-P06"
+      ],
+      "exit_when": "All linked source fixes are present in an immutable suitable upstream artifact, and regression, live Docker, consumer and rollback acceptance permit retirement of the downstream release workflow."
     }
   ]
 }
@@ -178,14 +186,6 @@ This inline register is the product-owned logical-patch projection used by SDLC-
 Verify existing upstream issues and PRs, current default-branch equivalence, and source-owned regression evidence before submitting missing contributions. A PR that is closed without merge is nonconformant, and a merged PR is not automatically present in an immutable official release. Remove a downstream patch only on a tested candidate against a suitable released upstream artifact. Retire the fork only after verified patch elimination, accepted distribution/ADR disposition, rollback readiness, consumer parity, and separate operator approval for production/retirement.
 
 
-## Unapproved distribution disposition proposal — DK-P07
+## Temporary distribution exit — DK-P07
 
-This is a proposal for an operator decision, not an approved ADR or a conformance exception. The register row remains unlinked and nonconformant. Exact source candidate: `8ac8142bc0fb3279e6784cded36d6e3e667ed0ae`; mapped historical commits: `49a43c7`, `f56fed0`. Initial/import commits can contain baseline and unrelated application files; approval must not cover the entire mapped commit merely because it appears in this row.
-
-Proposed narrow scope: Only the maintained source verifier, its disposable Docker-version fixture, and the owned CI/release wrappers. SDK/tool behavior, output bounds, recreation and dependency changes remain outside this proposal.
-
-Requested decision: retain this precisely bounded product-owned distribution adapter, or move/remove it through the existing source/release/deployment owners when the upstream artifact supplies an equivalent accepted distribution. Our package names, registry targets and operator release controls do not constitute a useful upstream feature request; do not manufacture an issue/PR asking upstream to adopt downstream ownership. Any reusable application or verification improvement discovered in this history still needs its own tested upstream-compatible contribution.
-
-Before an approved disposition can clear a gate, the operator-owned product ADR must identify the exact retained scope, rationale, owner, acceptance evidence and review/exit trigger. Proposed review trigger: the next suitable official upstream release or2026-11-14, whichever comes first. Exit requires equivalent released functionality and distribution, accepted source/runtime/consumer parity, rollback readiness and the existing explicit production/retirement acceptance. This proposal authorizes none of those transitions and approves no missing contribution.
-
-The existing shared repository/release lifecycle invokes the single canonical SDLC checker before managed tag/publication/recovery transitions. Direct public workflow integration remains incomplete: the checker source is private and repository-scoped public GitHub tokens cannot read it. No production credentials, privileged public runner, second checker or extra service was introduced.
+The own version, image and release workflow distribute the still-linked source patches; the source verifier and regression tests are ordinary product-owned checks, not independent upstream changes or an ADR waiver. Remove the distribution only after a suitable official release and separately accepted Docker behavior, consumers and rollback. This register does not authorize release or production changes.
