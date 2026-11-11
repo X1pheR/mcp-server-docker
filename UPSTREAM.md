@@ -27,7 +27,7 @@ The implementation preserves the inspected container configuration, `HostConfig`
 
 If replacement creation fails after the original container has been removed, the server attempts to recreate the original inspected configuration and restore the prior running state. The rollback is best-effort: if both replacement and restoration fail, the tool returns a hard failure containing both error contexts. Container IDs necessarily change during successful recreation or restoration.
 
-This behavior is intentionally maintained downstream rather than treated as an upstream-compatible bug fix.
+This behavior remains a not-yet-upstream-accepted downstream variation. [Upstream issue #62](https://github.com/ckreiling/mcp-server-docker/issues/62) now has [draft PR #74](https://github.com/ckreiling/mcp-server-docker/pull/74), proposing optional `preserve_existing` mode while retaining upstream legacy defaults. Exact fork head `deb6a2e84750c85c7adf39c1c3db539e9cb007e2` passed 15 Python tests including nine recreation regressions, plus two live tests using disposable isolated Alpine containers: successful preservation and recovery after a deliberately injected create failure. The final PR also documents this explicit opt-in behavior in upstream README and verifies that the MCP tool schema exposes `preserve_existing` as optional; all 15 tests and Ruff checks passed again on the latest exact head. This is not a maintainer-approved design or an official release; no exact-scope product ADR has been accepted. Removal of our downstream behavior requires upstream merge, suitable immutable release and separate product/consumer acceptance.
 
 ### Build-intermediate cleanup
 
@@ -40,9 +40,15 @@ Container, image and network filter models are serialized with unset optional va
 
 ### SSH transport dependency exclusion
 
-Upstream declares Paramiko as a direct dependency so Docker `ssh://` endpoints work out of the box. This downstream release does not package Paramiko because GitHub advisory `GHSA-r374-rxx8-8654` affects released Paramiko versions through `4.0.0` and currently has no patched release. The supported release therefore uses non-SSH Docker endpoints only.
+The official upstream distribution still requires `paramiko>=3.5.1,<4.0`, which includes versions affected by advisory `GHSA-r374-rxx8-8654`. **Paramiko 5.0.0 was actually published on 2026-05-09**, removing SHA-1 SSH algorithms; older documentation stating no patched release exists is superseded. This downstream deliberately excludes Paramiko and supports non-SSH Docker endpoints only.
 
-This is a packaging/security delta rather than an MCP tool-surface change. Reconsider it when Paramiko publishes a release containing upstream fix commit `a4489456b6f65281e172380cc4826cee5e851dbb`; do not re-add the dependency merely because a newer version number exists.
+Existing upstream issue [#72](https://github.com/ckreiling/mcp-server-docker/issues/72) and [draft PR #73](https://github.com/ckreiling/mcp-server-docker/pull/73) propose an optional `[ssh]` extra with Paramiko 5 for SSH-capable installs while leaving non-SSH default installations free from Paramiko. Exact PR head `53219aefba14f832bab2aed41b935c9988dbe63d` passed eight official upstream tests, Ruff, default/extra package resolution, mocked Docker SDK SSH-adapter construction and offline sdist/wheel checks. Real SSH-server compatibility, upstream CI/maintainer acceptance, merge and immutable release adoption are **not** yet proven.
+
+### Generic bounded Docker text output: complete published contribution coverage
+
+Retained log and attached-execution bounds remain one logical patch DK-P02. Issue #70 now has published draft PR #71 for logs (head `5313a52c4adae60b64fb44c51dfea5d67e308c55`) and existing PR #61 for attached execution (head `211ba6db0e42e6e1a69f2ec37178ba4a6ea6652a`). The register uses PR #71 as the primary link; PR #61 is the mandatory companion. Both contributions must be accepted for functional upstream convergence. Each selects the last 20 KiB of raw bytes before replacement decoding, with original byte-count and truncation metadata. Attached output preserves the upstream flat string response rather than the downstream nested metadata shape. Input retrieval remains eager and replacement characters can increase encoded response size; no process-memory guarantee is implied.
+
+Attached TDD reproduced 13 missing-behavior failures, followed by 18 passing tests and the remaining stdio launch test passing with the existing synthetic Docker version API fixture. Ruff, formatting, source distribution and wheel builds passed. Independent static review passed. Evidence: `/srv/hypershell/reports/sdlc09-20261011/docker-attached-61-{red,green,stdio-build,package}.log`; successful managed publication `run-20261013T225213013644Z-93e83ed6c61e` verified exact SHA, upstream PR identity and unchanged canonical root using live helper `42344ebda0df0dc2fa8232d733b9dd8a0a1ed7b493db6d43984b24a38a5f7546`. Official GitHub readback confirmed PR #61 open/unmerged and the exact accepted head. Existing log evidence is reused. No product release, production change or patch retirement occurred.
 
 ## Maintenance-only differences
 
@@ -67,3 +73,119 @@ When the weekly upstream check reports a different upstream release:
 11. update `upstream.json` only after the new baseline and remaining delta are reviewed.
 
 Do not automatically merge upstream source or Dependabot pull requests. Green CI is necessary but is not sufficient approval for a dependency, compatibility or upstream-baseline change.
+
+## Machine-readable downstream patch register
+
+This inline register is the product-owned logical-patch projection used by SDLC-09 structural verification. Its state does not replace current GitHub issue/PR verification, an actual upstream-compatible tested diff, or any required operator-approved product ADR. Unlinked rows are explicitly nonconformant; no historical fork behavior has been grandfathered. Cross-product integration and release actions remain gated separately. Patch scope and local commit mappings require further semantic review before external contribution.
+
+<!-- SDLC-UPSTREAM-REGISTER:1 -->
+```json
+{
+  "schema_version": 1,
+  "upstream": "ckreiling/mcp-server-docker",
+  "baseline": "v0.3.0",
+  "patches": [
+    {
+      "id": "DK-P01",
+      "kind": "upstream",
+      "scope": "Attached Docker container run result type normalization",
+      "local_commits": [
+        "2f6020b"
+      ],
+      "checked_on": "2026-11-11",
+      "issue": "https://github.com/ckreiling/mcp-server-docker/issues/69",
+      "pr": "https://github.com/ckreiling/mcp-server-docker/pull/61",
+      "pr_state": "open"
+    },
+    {
+      "id": "DK-P02",
+      "kind": "upstream",
+      "scope": "Bounded Docker output and deterministic truncation metadata",
+      "local_commits": [
+        "2f6020b"
+      ],
+      "checked_on": "2026-11-11",
+      "issue": "https://github.com/ckreiling/mcp-server-docker/issues/70",
+      "pr": "https://github.com/ckreiling/mcp-server-docker/pull/71",
+      "pr_state": "draft"
+    },
+    {
+      "id": "DK-P03",
+      "kind": "upstream",
+      "scope": "Configuration-preserving Docker container recreation with rollback safeguards",
+      "local_commits": [
+        "2f6020b"
+      ],
+      "checked_on": "2026-11-11",
+      "issue": "https://github.com/ckreiling/mcp-server-docker/issues/62",
+      "pr": "https://github.com/ckreiling/mcp-server-docker/pull/74",
+      "pr_state": "draft"
+    },
+    {
+      "id": "DK-P04",
+      "kind": "upstream",
+      "scope": "Docker build intermediate container cleanup",
+      "local_commits": [
+        "2f6020b"
+      ],
+      "checked_on": "2026-11-11",
+      "issue": "https://github.com/ckreiling/mcp-server-docker/issues/68",
+      "pr": "https://github.com/ckreiling/mcp-server-docker/pull/60",
+      "pr_state": "open"
+    },
+    {
+      "id": "DK-P05",
+      "kind": "upstream",
+      "scope": "Omit unset values when normalizing Docker SDK filters",
+      "local_commits": [
+        "2f6020b"
+      ],
+      "checked_on": "2026-11-11",
+      "issue": "https://github.com/ckreiling/mcp-server-docker/issues/67",
+      "pr": "https://github.com/ckreiling/mcp-server-docker/pull/59",
+      "pr_state": "open"
+    },
+    {
+      "id": "DK-P06",
+      "kind": "upstream",
+      "scope": "Paramiko vulnerability mitigation by removing optional SSH transport dependency",
+      "local_commits": [
+        "2f6020b"
+      ],
+      "checked_on": "2026-11-11",
+      "issue": "https://github.com/ckreiling/mcp-server-docker/issues/72",
+      "pr": "https://github.com/ckreiling/mcp-server-docker/pull/73",
+      "pr_state": "draft"
+    },
+    {
+      "id": "DK-P07",
+      "kind": "distribution",
+      "scope": "Temporary X1pheR package version and own image/release workflow used to distribute tracked Docker MCP source fixes until suitable official upstream artifacts are available",
+      "local_commits": [
+        "49a43c7",
+        "f56fed0"
+      ],
+      "checked_on": "2026-11-11",
+      "temporary": true,
+      "depends_on": [
+        "DK-P01",
+        "DK-P02",
+        "DK-P03",
+        "DK-P04",
+        "DK-P05",
+        "DK-P06"
+      ],
+      "exit_when": "All linked source fixes are present in an immutable suitable upstream artifact, and regression, live Docker, consumer and rollback acceptance permit retirement of the downstream release workflow."
+    }
+  ]
+}
+```
+
+## Convergence lifecycle
+
+Verify existing upstream issues and PRs, current default-branch equivalence, and source-owned regression evidence before submitting missing contributions. A PR that is closed without merge is nonconformant, and a merged PR is not automatically present in an immutable official release. Remove a downstream patch only on a tested candidate against a suitable released upstream artifact. Retire the fork only after verified patch elimination, accepted distribution/ADR disposition, rollback readiness, consumer parity, and separate operator approval for production/retirement.
+
+
+## Temporary distribution exit — DK-P07
+
+The own version, image and release workflow distribute the still-linked source patches; the source verifier and regression tests are ordinary product-owned checks, not independent upstream changes or an ADR waiver. Remove the distribution only after a suitable official release and separately accepted Docker behavior, consumers and rollback. This register does not authorize release or production changes.
